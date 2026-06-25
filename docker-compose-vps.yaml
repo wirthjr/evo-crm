@@ -1,0 +1,436 @@
+# =============================================================================
+# Arco CRM Community — VPS Single-Node Deployment
+# =============================================================================
+#
+# REDE (network):
+#   Todos os serviços comunicam-se pela rede interna "crm-net" (bridge).
+#   O Docker Compose cria essa rede automaticamente no primeiro deploy.
+#   Serviços usam os nomes de container como hostname (ex: crm-postgres, crm-redis).
+#
+# DEPLOY VIA CLI (recomendado):
+#   node deploy-db.js          # infraestrutura (postgres + redis)
+#   node deploy-image.js       # envia fontes → builda na VPS → sobe containers
+#
+# Os serviços customizados usam `build:` (contexto local) e são buildados
+# DIRETAMENTE NA VPS via `docker compose build`. Não requer Docker Desktop local.
+#
+# DEPLOY VIA PORTAINER (stacks):
+#   1. Portainer → Stacks → Add stack
+#   2. Name: crm
+#   3. Build method: Web editor
+#   4. Cole este arquivo no editor
+#   5. Em "Environment variables", cole o conteúdo do .env.production
+#      (Portainer ignora env_file no modo Web editor, use variáveis manuais)
+#   6. Clique em "Deploy the stack"
+#
+#   NOTA: Se precisar que esta stack se comunique com outras stacks no Portainer,
+#   crie uma rede externa antes: Networks → Add network → name: crm-net, driver: bridge
+#   Depois descomente a linha `external: true` na seção networks abaixo.
+#
+# DEPLOY MANUAL (VPS sem Portainer):
+#   docker compose -f docker-compose-vps.yaml down
+#   docker compose -f docker-compose-vps.yaml up -d --force-recreate
+#   docker compose -f docker-compose-vps.yaml logs -f
+# =============================================================================
+
+services:
+
+  # ---------------------------------------------------------------------------
+  # Infrastructure — pulled directly from Docker Hub on the VPS
+  # ---------------------------------------------------------------------------
+  crm-postgres:
+    image: pgvector/pgvector:pg16
+    restart: unless-stopped
+    networks:
+      - crm-net
+    env_file: .env.production
+    # Porta interna apenas — comunicação via crm-net
+    volumes:
+      - crm_postgres_data:/var/lib/postgresql/data
+    environment:
+      POSTGRES_DB: ${POSTGRES_DATABASE:-evo_community}
+      POSTGRES_USER: ${POSTGRES_USERNAME:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-apppass}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USERNAME:-postgres}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  crm-redis:
+    image: redis:alpine
+    restart: unless-stopped
+    networks:
+      - crm-net
+    env_file: .env.production
+    command: ["sh", "-c", "redis-server --requirepass $${REDIS_PASSWORD:-evoai_redis_pass} --appendonly yes"]
+    # Porta interna apenas — comunicação via crm-net
+    volumes:
+      - crm_redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "$${REDIS_PASSWORD:-evoai_redis_pass}", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # ---------------------------------------------------------------------------
+  # API Gateway (Nginx) — Port 3030
+  # ---------------------------------------------------------------------------
+  crm-gateway:
+    build:
+      context: ./nginx
+      dockerfile: Dockerfile
+    image: crm-gateway:latest
+    restart: unless-stopped
+    networks:
+      - crm-net
+    ports:
+      - "3030:3030"
+    environment:
+      AUTH_UPSTREAM: crm-auth:3001
+      CRM_UPSTREAM: crm-crm:3000
+      CORE_UPSTREAM: crm-core:5555
+      PROCESSOR_UPSTREAM: crm-processor:8000
+      BOT_RUNTIME_UPSTREAM: crm-bot-runtime:8091
+    depends_on:
+      crm-auth:
+        condition: service_healthy
+      crm-crm:
+        condition: service_healthy
+
+  # ---------------------------------------------------------------------------
+  # Auth Service (Ruby / Rails) — Port 3001
+  # ---------------------------------------------------------------------------
+  crm-auth:
+    build:
+      context: ./evo-auth-service-community
+      dockerfile: Dockerfile
+    image: crm-auth:latest
+    restart: unless-stopped
+    networks:
+      - crm-net
+    command: bash -c "bundle exec rails db:prepare 2>&1 || echo 'Migration had errors, continuing...'; bundle exec rails s -p 3001 -b 0.0.0.0"
+    # Porta interna apenas — roteado via crm-gateway
+    env_file: .env.production
+    environment:
+      RAILS_ENV: ${RAILS_ENV:-production}
+      RAILS_MAX_THREADS: ${RAILS_MAX_THREADS:-5}
+      POSTGRES_HOST: crm-postgres
+      REDIS_URL: redis://:${REDIS_PASSWORD:-evoai_redis_pass}@crm-redis:6379/1
+    depends_on:
+      crm-postgres:
+        condition: service_healthy
+      crm-redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 90s
+    volumes:
+      - crm_auth_storage:/rails/storage
+
+  # ---------------------------------------------------------------------------
+  # Auth Sidekiq (Background Jobs)
+  # ---------------------------------------------------------------------------
+  crm-auth-sidekiq:
+    image: crm-auth:latest
+    restart: unless-stopped
+    networks:
+      - crm-net
+    command: ["bundle", "exec", "sidekiq", "-C", "config/sidekiq.yml"]
+    env_file: .env.production
+    environment:
+      RAILS_ENV: ${RAILS_ENV:-production}
+      POSTGRES_HOST: crm-postgres
+      REDIS_URL: redis://:${REDIS_PASSWORD:-evoai_redis_pass}@crm-redis:6379/1
+    depends_on:
+      crm-postgres:
+        condition: service_healthy
+      crm-redis:
+        condition: service_healthy
+    healthcheck:
+      disable: true
+    volumes:
+      - crm_auth_storage:/rails/storage
+
+  # ---------------------------------------------------------------------------
+  # CRM Service (Ruby / Rails) — Port 3000
+  # ---------------------------------------------------------------------------
+  crm-crm:
+    build:
+      context: ./evo-ai-crm-community
+      dockerfile: docker/Dockerfile
+    image: crm-crm:latest
+    restart: unless-stopped
+    networks:
+      - crm-net
+    command: sh -c "until wget -qO- http://crm-auth:3001/health >/dev/null 2>&1; do echo 'Waiting for auth...'; sleep 5; done; bundle exec rails db:prepare 2>&1 || echo 'Migration had errors, continuing...'; bundle exec rails s -p 3000 -b 0.0.0.0"
+    # Porta interna apenas — roteado via crm-gateway
+    env_file: .env.production
+    environment:
+      RAILS_ENV: ${RAILS_ENV:-production}
+      RAILS_SERVE_STATIC_FILES: ${RAILS_SERVE_STATIC_FILES:-true}
+      RAILS_LOG_TO_STDOUT: ${RAILS_LOG_TO_STDOUT:-true}
+      POSTGRES_HOST: crm-postgres
+      REDIS_URL: redis://:${REDIS_PASSWORD:-evoai_redis_pass}@crm-redis:6379/0
+      EVO_AUTH_SERVICE_URL: http://crm-auth:3001
+      EVO_AI_CORE_SERVICE_URL: http://crm-core:5555
+      BOT_RUNTIME_URL: http://crm-bot-runtime:8091
+      BOT_RUNTIME_POSTBACK_BASE_URL: http://crm-crm:3000
+    depends_on:
+      crm-postgres:
+        condition: service_healthy
+      crm-redis:
+        condition: service_healthy
+      crm-auth:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:3000/health/live"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+      start_period: 300s
+    volumes:
+      - crm_storage:/app/storage
+      - crm_bundle:/usr/local/bundle
+      - crm_cache:/app/tmp/cache
+
+  # ---------------------------------------------------------------------------
+  # CRM Sidekiq (Background Jobs)
+  # ---------------------------------------------------------------------------
+  crm-crm-sidekiq:
+    image: crm-crm:latest
+    restart: unless-stopped
+    networks:
+      - crm-net
+    command: ["bundle", "exec", "sidekiq", "-C", "config/sidekiq.yml"]
+    env_file: .env.production
+    environment:
+      RAILS_ENV: ${RAILS_ENV:-production}
+      POSTGRES_HOST: crm-postgres
+      REDIS_URL: redis://:${REDIS_PASSWORD:-evoai_redis_pass}@crm-redis:6379/0
+      EVO_AUTH_SERVICE_URL: http://crm-auth:3001
+      EVO_AI_CORE_SERVICE_URL: http://crm-core:5555
+      BOT_RUNTIME_URL: http://crm-bot-runtime:8091
+      BOT_RUNTIME_POSTBACK_BASE_URL: http://crm-crm:3000
+    depends_on:
+      crm-postgres:
+        condition: service_healthy
+      crm-redis:
+        condition: service_healthy
+    healthcheck:
+      disable: true
+    volumes:
+      - crm_storage:/app/storage
+      - crm_bundle:/usr/local/bundle
+      - crm_cache:/app/tmp/cache
+
+  # ---------------------------------------------------------------------------
+  # Core Service (Go / Gin) — Port 5555
+  # ---------------------------------------------------------------------------
+  crm-core:
+    build:
+      context: ./evo-ai-core-service-community
+      dockerfile: Dockerfile
+    image: crm-core:latest
+    restart: unless-stopped
+    networks:
+      - crm-net
+    # Porta interna apenas — roteado via crm-gateway
+    env_file: .env.production
+    environment:
+      DB_HOST: crm-postgres
+      DB_PORT: "${DB_PORT:-5432}"
+      DB_USER: "${DB_USER:-postgres}"
+      DB_PASSWORD: "${DB_PASSWORD:-apppass}"
+      DB_NAME: "${DB_NAME:-evo_community}"
+      DB_SSLMODE: "${DB_SSLMODE:-disable}"
+      DB_MAX_IDLE_CONNS: "${DB_MAX_IDLE_CONNS:-10}"
+      DB_MAX_OPEN_CONNS: "${DB_MAX_OPEN_CONNS:-100}"
+      DB_CONN_MAX_LIFETIME: "${DB_CONN_MAX_LIFETIME:-1h}"
+      DB_CONN_MAX_IDLE_TIME: "${DB_CONN_MAX_IDLE_TIME:-30m}"
+      PORT: "5555"
+      EVOLUTION_BASE_URL: http://crm-crm:3000
+      EVO_AUTH_BASE_URL: http://crm-auth:3001
+      AI_PROCESSOR_URL: http://crm-processor:8000
+      AI_PROCESSOR_VERSION: v1
+    depends_on:
+      crm-postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:5555/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  # ---------------------------------------------------------------------------
+  # Processor Service (Python / FastAPI) — Port 8000
+  # ---------------------------------------------------------------------------
+  crm-processor:
+    build:
+      context: ./evo-ai-processor-community
+      dockerfile: Dockerfile
+    image: crm-processor:latest
+    restart: unless-stopped
+    networks:
+      - crm-net
+    command: sh -c "alembic upgrade head 2>&1 || echo 'Alembic migration had errors, continuing...'; python -m scripts.run_seeders; uvicorn src.main:app --host $$HOST --port $$PORT"
+    # Porta interna apenas — roteado via crm-gateway
+    env_file: .env.production
+    environment:
+      POSTGRES_CONNECTION_STRING: "${POSTGRES_CONNECTION_STRING:-postgresql://postgres:apppass@crm-postgres:5432/evo_community}"
+      REDIS_HOST: crm-redis
+      REDIS_PORT: "${REDIS_PORT:-6379}"
+      REDIS_PASSWORD: "${REDIS_PASSWORD:-evoai_redis_pass}"
+      REDIS_SSL: "${REDIS_SSL:-false}"
+      REDIS_DB: "${REDIS_DB:-1}"
+      REDIS_KEY_PREFIX: "${REDIS_KEY_PREFIX:-a2a_}"
+      REDIS_TTL: "${REDIS_TTL:-3600}"
+      HOST: 0.0.0.0
+      PORT: "8000"
+      DEBUG: "${DEBUG:-false}"
+      EVO_AI_CRM_URL: http://crm-crm:3000
+      CORE_SERVICE_URL: http://crm-core:5555/api/v1
+      TOOLS_CACHE_ENABLED: "${TOOLS_CACHE_ENABLED:-true}"
+      TOOLS_CACHE_TTL: "${TOOLS_CACHE_TTL:-3600}"
+    volumes:
+      - crm_processor_logs:/app/logs
+    depends_on:
+      crm-postgres:
+        condition: service_healthy
+      crm-redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+
+  # ---------------------------------------------------------------------------
+  # Bot Runtime (Go / Gin) — Port 8091
+  # ---------------------------------------------------------------------------
+  crm-bot-runtime:
+    build:
+      context: ./evo-bot-runtime
+      dockerfile: Dockerfile
+    image: crm-bot-runtime:latest
+    restart: unless-stopped
+    networks:
+      - crm-net
+    # Porta interna apenas — roteado via crm-gateway
+    env_file: .env.production
+    environment:
+      LISTEN_ADDR: 0.0.0.0:8091
+      REDIS_URL: redis://:${REDIS_PASSWORD:-evoai_redis_pass}@crm-redis:6379
+      AI_PROCESSOR_URL: http://crm-processor:8000
+      BOT_RUNTIME_SECRET: "${BOT_RUNTIME_SECRET:-evo-bot-runtime-dev-secret}"
+      AI_CALL_TIMEOUT_SECONDS: "${AI_CALL_TIMEOUT_SECONDS:-30}"
+    depends_on:
+      crm-redis:
+        condition: service_healthy
+      crm-processor:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8091/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+  # ---------------------------------------------------------------------------
+  # EvoNexus Dashboard — Port 8090 (Flask + React + Terminal Server)
+  # ---------------------------------------------------------------------------
+  evonexus-dashboard:
+    build:
+      context: ./evo-nexus
+      dockerfile: Dockerfile.swarm.dashboard
+    image: evonexus-dashboard:latest
+    restart: unless-stopped
+    networks:
+      - crm-net
+    ports:
+      - "127.0.0.1:8090:8090"
+      - "127.0.0.1:32352:32352"
+    environment:
+      TZ: America/Sao_Paulo
+      EVONEXUS_PORT: "8090"
+      TERMINAL_SERVER_PORT: "32352"
+      DASHBOARD_API_TOKEN: "${DASHBOARD_API_TOKEN:-evo_nexus_crm_api_token_2026}"
+      DASHBOARD_API_USER: "${DASHBOARD_API_USER:-admin}"
+      EVONEXUS_SECRET_KEY: "${EVONEXUS_SECRET_KEY:-apppass}"
+      CORS_ALLOWED_ORIGINS: "https://nexus.arcotech.api.br,https://crm.arcotech.api.br"
+      EVO_CRM_URL: "http://crm-crm:3000"
+      EVO_CRM_TOKEN: "${EVO_CRM_TOKEN:-apppass}"
+    volumes:
+      - evonexus_config:/workspace/config
+      - evonexus_workspace:/workspace/workspace
+      - evonexus_memory:/workspace/memory
+      - evonexus_adw_logs:/workspace/ADWs/logs
+      - evonexus_agent_memory:/workspace/.claude/agent-memory
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8090/api/version"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  # ---------------------------------------------------------------------------
+  # Frontend (React / Vite / Nginx) — Port 80
+  # ---------------------------------------------------------------------------
+  crm-frontend:
+    build:
+      context: ./evo-ai-frontend-community
+      dockerfile: Dockerfile
+      args:
+        VITE_NEXUS_URL: "${VITE_NEXUS_URL:-http://evonexus-dashboard:8090}"
+    image: crm-frontend:latest
+    restart: unless-stopped
+    networks:
+      - crm-net
+    ports:
+      - "5173:80"
+    environment:
+      VITE_APP_ENV: production
+      VITE_API_URL: "${VITE_API_URL:-https://api.seudominio.com}"
+      VITE_AUTH_API_URL: "${VITE_AUTH_API_URL:-https://api.seudominio.com}"
+      VITE_EVOAI_API_URL: "${VITE_EVOAI_API_URL:-https://api.seudominio.com}"
+      VITE_AGENT_PROCESSOR_URL: "${VITE_AGENT_PROCESSOR_URL:-https://api.seudominio.com}"
+      VITE_WS_URL: "${VITE_WS_URL:-https://api.seudominio.com}"
+      VITE_NEXUS_URL: "${VITE_NEXUS_URL:-http://evonexus-dashboard:8090}"
+    depends_on:
+      crm-auth:
+        condition: service_healthy
+      crm-crm:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:80/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+volumes:
+  crm_postgres_data:
+  crm_redis_data:
+  crm_processor_logs:
+  crm_auth_storage:
+  crm_storage:
+  crm_bundle:
+  crm_cache:
+  evonexus_config:
+  evonexus_workspace:
+  evonexus_memory:
+  evonexus_adw_logs:
+  evonexus_agent_memory:
+
+networks:
+  crm-net:
+    driver: bridge
+    # Descomente a linha abaixo se a rede "crm-net" já existir externamente
+    # (ex: criada previamente no Portainer para comunicação entre stacks)
+    # external: true

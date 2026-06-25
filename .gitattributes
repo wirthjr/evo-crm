@@ -1,0 +1,6 @@
+# Force Unix line endings for shell scripts and Docker files
+*.sh text eol=lf
+*.bash text eol=lf
+Dockerfile* text eol=lf
+*.py text eol=lf
+*.go text eol=lf

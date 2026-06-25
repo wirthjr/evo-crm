@@ -1,0 +1,18 @@
+{
+    "name": "arco-crm",
+    "version": "1.0.0",
+    "description": "Go backend application",
+    "scripts": {
+        "deploy": "node deploy-image.js",
+        "deploy:local": "node deploy-local-build.js",
+        "deploy:nexus": "node deploy-nexus.js",
+        "deploy:vps": "node deploy-image.js",
+        "deploy-db": "node deploy-db.js",
+        "deploy:all": "node deploy-db.js && node deploy-image.js",
+        "start": "docker compose up -d",
+        "tunnel": "ssh -L 3030:localhost:3030 -L 5173:localhost:5173 -L 5432:localhost:5432 -L 6379:localhost:6379 root@meu-vps.com -N",
+        "tunnel:api": "ssh -L 3030:localhost:3030 root@meu-vps.com -N",
+        "tunnel:db": "ssh -L 5432:localhost:5432 root@meu-vps.com -N",
+        "tunnel:redis": "ssh -L 6379:localhost:6379 root@meu-vps.com -N"
+    }
+}
