@@ -16,6 +16,7 @@ Restore semantics (advisor refinement):
 """
 from __future__ import annotations
 
+import fcntl
 import hashlib
 import json
 import logging
@@ -25,11 +26,6 @@ import shutil
 import time
 from pathlib import Path
 from typing import Any
-
-try:
-    import fcntl
-except ImportError:
-    fcntl = None  # Windows compatibility
 
 logger = logging.getLogger(__name__)
 
@@ -178,15 +174,13 @@ class _ClaudeJsonWriter:
     def __enter__(self) -> "_ClaudeJsonWriter":
         # Step 1: acquire global flock (LOCK_EX, blocking — concurrent installs queue)
         self._lock_fd = os.open(str(_LOCK_FILE), os.O_CREAT | os.O_WRONLY, 0o644)
-        if fcntl:
-            fcntl.flock(self._lock_fd, fcntl.LOCK_EX)
+        fcntl.flock(self._lock_fd, fcntl.LOCK_EX)
         return self
 
     def __exit__(self, *_) -> None:
         if self._lock_fd is not None:
             try:
-                if fcntl:
-                    fcntl.flock(self._lock_fd, fcntl.LOCK_UN)
+                fcntl.flock(self._lock_fd, fcntl.LOCK_UN)
                 os.close(self._lock_fd)
             except OSError:
                 pass

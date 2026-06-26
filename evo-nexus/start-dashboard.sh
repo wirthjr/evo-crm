@@ -18,7 +18,7 @@
 set -euo pipefail
 
 TERMINAL_PORT="${TERMINAL_SERVER_PORT:-32352}"
-FLASK_PORT="${EVONEXUS_PORT:-8090}"
+FLASK_PORT="${EVONEXUS_PORT:-8080}"
 
 echo "[start-dashboard] terminal-server on :${TERMINAL_PORT}, Flask on :${FLASK_PORT}"
 
@@ -79,15 +79,8 @@ fi
 node /workspace/dashboard/terminal-server/bin/server.js --port "${TERMINAL_PORT}" &
 TERMINAL_PID=$!
 
-# Start the dashboard backend with a production WSGI server.
-# Keep a single worker because some in-process state assumes one process.
-uv run gunicorn \
-    --workers 1 \
-    --worker-class gthread \
-    --threads 16 \
-    --bind "0.0.0.0:${FLASK_PORT}" \
-    --timeout 120 \
-    dashboard.backend.wsgi:app &
+# Start Flask in the background
+uv run python /workspace/dashboard/backend/app.py &
 FLASK_PID=$!
 
 # When this script exits for any reason, kill both children

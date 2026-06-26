@@ -49,7 +49,7 @@ INTEGRATIONS = [
     {"name": "LinkedIn", "keys": ["SOCIAL_LINKEDIN_"], "category": "social", "prefix": True},
     {"name": "Evolution API", "keys": ["EVOLUTION_API_KEY", "EVOLUTION_API_URL"], "category": "messaging"},
     {"name": "Evolution Go", "keys": ["EVOLUTION_GO_KEY", "EVOLUTION_GO_URL"], "category": "messaging"},
-    {"name": "Arco CRM", "keys": ["EVO_CRM_TOKEN", "EVO_CRM_URL"], "category": "crm"},
+    {"name": "Evo CRM", "keys": ["EVO_CRM_TOKEN", "EVO_CRM_URL"], "category": "crm"},
     {"name": "AI Image Creator", "keys": ["AI_IMG_CREATOR_"], "category": "creative", "prefix": True},
     # Note: LLM providers (OpenAI, Anthropic, Gemini) are NOT listed here.
     # Agents/classifiers use Claude Code as the runner (subprocess); Knowledge
@@ -359,7 +359,7 @@ def list_integrations():
                 any(name.startswith(p) for p in keys) for name in os.environ
             )
         else:
-            # All declared keys must be non-empty. Evolution Go / Arco CRM need
+            # All declared keys must be non-empty. Evolution Go / Evo CRM need
             # both the token and the base URL — a half-configured integration
             # is not "connected".
             configured = all(bool(os.environ.get(k)) for k in keys)

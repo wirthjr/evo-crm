@@ -46,7 +46,6 @@ def tmp_db(tmp_path):
             goal_id TEXT,
             required_secrets TEXT DEFAULT '[]',
             decision_prompt TEXT NOT NULL,
-            handler TEXT,
             created_at TEXT NOT NULL,
             updated_at TEXT NOT NULL
         );
@@ -80,7 +79,7 @@ def tmp_db(tmp_path):
         INSERT INTO heartbeats VALUES (
             'atlas-4h', 'atlas-project', 14400, 10, 5, 1800,
             '["interval","manual"]', 1, null, '[]',
-            'You are Atlas. Decide: act or skip?', null, ?, ?
+            'You are Atlas. Decide: act or skip?', ?, ?
         )
     """, (now, now))
     conn.commit()
@@ -133,15 +132,13 @@ def test_step7_timeout_hard_kill():
             pass
 
     with patch("subprocess.Popen", return_value=_SlowProc()):
-        with patch("shutil.which", return_value="/usr/local/bin/claude"):
-            with patch("os.getpgid", return_value=99999, create=True):
-                with patch("os.killpg", return_value=None, create=True):
-                    result = step7_invoke_claude(
-                        agent="atlas-project",
-                        prompt="Test prompt",
-                        max_turns=5,
-                        timeout_seconds=2,  # very short
-                    )
+        with patch("os.killpg", return_value=None):
+            result = step7_invoke_claude(
+                agent="atlas-project",
+                prompt="Test prompt",
+                max_turns=5,
+                timeout_seconds=2,  # very short
+            )
 
     assert result["status"] == "timeout"
     assert result["error"] is not None
@@ -194,35 +191,6 @@ def test_step7_nonzero_exit_is_fail():
 
     assert result["status"] == "fail"
     assert result["error"] is not None
-
-
-def test_run_heartbeat_uses_handler_before_system_fallback(tmp_db):
-    """A handler heartbeat should execute its handler even when agent='system'."""
-    import heartbeat_runner as runner
-
-    conn = sqlite3.connect(str(tmp_db))
-    conn.execute(
-        """UPDATE heartbeats
-           SET agent='system', max_turns=0, decision_prompt='', handler='plugin_integration_health.tick'
-           WHERE id='atlas-4h'"""
-    )
-    conn.commit()
-    conn.close()
-
-    fake_result = {"checked": 3, "healthy": 3}
-
-    with patch.object(runner, "DB_PATH", tmp_db):
-        with patch.object(runner, "_run_system_heartbeat", side_effect=AssertionError("legacy system runner should not be used")):
-            with patch("plugin_integration_health.tick", return_value=fake_result):
-                runner.run_heartbeat("atlas-4h", run_id=str(uuid.uuid4()))
-
-    conn = sqlite3.connect(str(tmp_db))
-    row = conn.execute(
-        "SELECT status, error FROM heartbeat_runs WHERE heartbeat_id='atlas-4h' ORDER BY started_at DESC LIMIT 1"
-    ).fetchone()
-    conn.close()
-    assert row[0] == "success"
-    assert row[1] is None
 
 
 # ---------------------------------------------------------------------------

@@ -1,26 +1,8 @@
-import { useState, useEffect, useCallback, useMemo, type ReactNode } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
-import {
-  ChevronDown,
-  ChevronRight,
-  Search,
-  Menu,
-  X,
-  BookOpen,
-  Rocket,
-  LayoutDashboard,
-  Bot,
-  Zap,
-  Clock,
-  Plug,
-  Globe,
-  FileText,
-  Folder,
-  FolderOpen,
-  type LucideIcon,
-} from 'lucide-react'
+import { ChevronDown, ChevronRight, Search, Menu, X, BookOpen, Rocket, LayoutDashboard, Bot, Zap, Clock, Plug, Globe, FileText } from 'lucide-react'
 
 const API = import.meta.env.DEV ? 'http://localhost:8080' : ''
 
@@ -37,128 +19,6 @@ interface DocSection {
   children: DocEntry[]
 }
 
-interface TreeNode {
-  id: string
-  label: string
-  type: 'folder' | 'file'
-  slug?: string
-  path?: string
-  content_preview?: string
-  children: TreeNode[]
-}
-
-const SECTION_ICONS: Record<string, LucideIcon> = {
-  'getting-started': Rocket,
-  'guides': BookOpen,
-  'dashboard': LayoutDashboard,
-  'agents': Bot,
-  'skills': Zap,
-  'routines': Clock,
-  'integrations': Plug,
-  'real-world': Globe,
-  'reference': FileText,
-}
-
-function humanizeSegment(segment: string) {
-  return segment
-    .replace(/\.md$/i, '')
-    .replace(/[-_]/g, ' ')
-    .replace(/\b\w/g, (char) => char.toUpperCase())
-}
-
-function sortTreeNodes(nodes: TreeNode[]) {
-  return [...nodes].sort((a, b) => {
-    if (a.type !== b.type) return a.type === 'folder' ? -1 : 1
-    return a.label.localeCompare(b.label)
-  })
-}
-
-function buildSectionTree(section: DocSection): TreeNode[] {
-  const roots: TreeNode[] = []
-
-  const ensureFolder = (bucket: TreeNode[], id: string, label: string) => {
-    let folderNode = bucket.find((node) => node.id === id && node.type === 'folder')
-    if (!folderNode) {
-      folderNode = { id, label, type: 'folder', children: [] }
-      bucket.push(folderNode)
-    }
-    return folderNode
-  }
-
-  for (const entry of section.children) {
-    const normalizedPath = entry.path.startsWith('root/') ? entry.path.slice(5) : entry.path
-    const parts = normalizedPath.split('/').filter(Boolean)
-    let currentLevel = roots
-    let accumulatedPath = ''
-
-    parts.forEach((part, index) => {
-      const isLeaf = index === parts.length - 1
-      accumulatedPath = accumulatedPath ? `${accumulatedPath}/${part}` : part
-
-      if (isLeaf) {
-        currentLevel.push({
-          id: `${section.slug}:${entry.slug}`,
-          label: entry.title || humanizeSegment(part),
-          type: 'file',
-          slug: entry.slug,
-          path: entry.path,
-          content_preview: entry.content_preview,
-          children: [],
-        })
-        return
-      }
-
-      const folder = ensureFolder(
-        currentLevel,
-        `${section.slug}:folder:${accumulatedPath}`,
-        humanizeSegment(part),
-      )
-      currentLevel = folder.children
-    })
-  }
-
-  const deepSort = (nodes: TreeNode[]): TreeNode[] =>
-    sortTreeNodes(nodes).map((node) => ({
-      ...node,
-      children: node.type === 'folder' ? deepSort(node.children) : node.children,
-    }))
-
-  return deepSort(roots)
-}
-
-function filterTree(nodes: TreeNode[], query: string): TreeNode[] {
-  if (!query) return nodes
-
-  const q = query.toLowerCase()
-
-  return nodes.reduce<TreeNode[]>((acc, node) => {
-    const matchesLabel = node.label.toLowerCase().includes(q)
-    const matchesPreview = node.content_preview?.toLowerCase().includes(q) ?? false
-
-    if (node.type === 'file') {
-      if (matchesLabel || matchesPreview) acc.push(node)
-      return acc
-    }
-
-    const filteredChildren = filterTree(node.children, query)
-    if (matchesLabel || filteredChildren.length > 0) {
-      acc.push({ ...node, children: filteredChildren })
-    }
-    return acc
-  }, [])
-}
-
-function findAncestorIds(nodes: TreeNode[], slug: string, trail: string[] = []): string[] {
-  for (const node of nodes) {
-    if (node.type === 'file' && node.slug === slug) return trail
-    if (node.type === 'folder') {
-      const result = findAncestorIds(node.children, slug, [...trail, node.id])
-      if (result.length > 0) return result
-    }
-  }
-  return []
-}
-
 export default function Docs() {
   const location = useLocation()
   const navigate = useNavigate()
@@ -166,7 +26,7 @@ export default function Docs() {
   const [sections, setSections] = useState<DocSection[]>([])
   const [content, setContent] = useState('')
   const [loading, setLoading] = useState(true)
-  const [expanded, setExpanded] = useState<Record<string, boolean>>({})
+  const [collapsed, setCollapsed] = useState<Record<string, boolean>>({})
   const [search, setSearch] = useState('')
   const [mobileOpen, setMobileOpen] = useState(false)
   const [activeSlug, setActiveSlug] = useState('')
@@ -237,108 +97,21 @@ export default function Docs() {
     setMobileOpen(false)
   }
 
-  const toggleNode = (id: string, defaultExpanded = false) => {
-    setExpanded((prev) => ({ ...prev, [id]: !(prev[id] ?? defaultExpanded) }))
+  const toggleSection = (slug: string) => {
+    setCollapsed((prev) => ({ ...prev, [slug]: !prev[slug] }))
   }
 
-  const treeSections = useMemo(
-    () => sections.map((section) => ({ ...section, nodes: buildSectionTree(section) })),
-    [sections],
-  )
-
-  const activeAncestorIds = useMemo(() => {
-    const ids = new Set<string>()
-    for (const section of treeSections) {
-      if (activeSlug) {
-        ids.add(section.slug)
-        findAncestorIds(section.nodes, activeSlug).forEach((id) => ids.add(id))
-      }
-    }
-    return ids
-  }, [treeSections, activeSlug])
-
-  const filteredSections = useMemo(() => {
-    const query = search.trim()
-    return treeSections
-      .map((section) => ({
-        ...section,
-        nodes: filterTree(section.nodes, query),
-      }))
-      .filter((section) => section.nodes.length > 0)
-  }, [treeSections, search])
-
-  const getSnippet = (preview?: string) => {
-    const query = search.trim().toLowerCase()
-    if (!preview || !query) return null
-    const previewLower = preview.toLowerCase()
-    const start = previewLower.indexOf(query)
-    if (start < 0) return null
-    return `...${preview.slice(Math.max(0, start - 18), start + query.length + 42)}...`
-  }
-
-  const renderTreeNode = (node: TreeNode, depth = 0): ReactNode => {
-    if (node.type === 'folder') {
-      const defaultExpanded = search.trim().length > 0 || activeAncestorIds.has(node.id)
-      const isExpanded = expanded[node.id] ?? defaultExpanded
-
-      return (
-        <div key={node.id} className="mb-0.5">
-          <button
-            type="button"
-            onClick={() => toggleNode(node.id, defaultExpanded)}
-            className="group flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left transition-colors hover:bg-white/5"
-            style={{ paddingLeft: `${8 + depth * 16}px` }}
-          >
-            {isExpanded ? (
-              <ChevronDown size={12} className="shrink-0 text-[#667085] group-hover:text-[#D0D5DD]" />
-            ) : (
-              <ChevronRight size={12} className="shrink-0 text-[#667085] group-hover:text-[#D0D5DD]" />
-            )}
-            {isExpanded ? (
-              <FolderOpen size={14} className="shrink-0 text-[#00FFA7]/80" />
-            ) : (
-              <Folder size={14} className="shrink-0 text-[#00FFA7]/60" />
-            )}
-            <span className="truncate text-[13px] font-medium text-[#98A2B3] group-hover:text-[#E5E7EB]">
-              {node.label}
-            </span>
-          </button>
-          {isExpanded && node.children.length > 0 && (
-            <div className="mt-0.5">
-              {node.children.map((child) => renderTreeNode(child, depth + 1))}
-            </div>
-          )}
-        </div>
-      )
-    }
-
-    const snippet = getSnippet(node.content_preview)
-
-    return (
-      <button
-        key={node.id}
-        type="button"
-        onClick={() => handleNav(node.slug!)}
-        className={`mb-0.5 block w-full rounded-lg border-l-2 py-2 text-left transition-colors ${activeSlug === node.slug
-          ? 'border-[#00FFA7] bg-[#00FFA7]/10 text-[#00FFA7]'
-          : 'border-transparent text-[#667085] hover:bg-white/5 hover:text-[#D0D5DD]'
-          }`}
-        style={{ paddingLeft: `${26 + depth * 16}px`, paddingRight: '10px' }}
-      >
-        <div className="flex items-start gap-2">
-          <FileText size={13} className={`mt-0.5 shrink-0 ${activeSlug === node.slug ? 'text-[#00FFA7]' : 'text-[#667085]'}`} />
-          <div className="min-w-0">
-            <span className="block truncate text-[13px]">{node.label}</span>
-            {snippet && (
-              <span className="mt-0.5 block truncate text-[11px] text-[#475467]">
-                {snippet}
-              </span>
-            )}
-          </div>
-        </div>
-      </button>
-    )
-  }
+  // Filter sections by search (matches title and content_preview)
+  const searchLower = search.toLowerCase()
+  const filtered = sections
+    .map((sec) => ({
+      ...sec,
+      children: sec.children.filter((c) =>
+        c.title.toLowerCase().includes(searchLower) ||
+        (c.content_preview && c.content_preview.toLowerCase().includes(searchLower))
+      ),
+    }))
+    .filter((sec) => sec.children.length > 0)
 
   const sidebar = (
     <div className="flex flex-col h-full">
@@ -376,28 +149,64 @@ export default function Docs() {
 
       {/* Nav */}
       <nav className="flex-1 overflow-y-auto px-3 pb-4">
-        {filteredSections.map((sec) => {
-          const Icon = SECTION_ICONS[sec.slug] || FileText
-          const defaultExpanded = search.trim().length > 0 || activeAncestorIds.has(sec.slug) || sections.length > 0
-          const isExpanded = expanded[sec.slug] ?? defaultExpanded
-
+        {filtered.map((sec) => {
+          const sectionIcons: Record<string, typeof Rocket> = {
+            'getting-started': Rocket,
+            'guides': BookOpen,
+            'dashboard': LayoutDashboard,
+            'agents': Bot,
+            'skills': Zap,
+            'routines': Clock,
+            'integrations': Plug,
+            'real-world': Globe,
+            'reference': FileText,
+          }
+          const Icon = sectionIcons[sec.slug] || FileText
           return (
-            <div key={sec.slug} className="mb-2">
-              <button
-                type="button"
-                onClick={() => toggleNode(sec.slug, defaultExpanded)}
-                className="w-full flex items-center gap-2 px-2 py-1.5 text-[11px] uppercase tracking-widest text-[#667085] font-semibold hover:text-[#D0D5DD] transition-colors"
-              >
-                {isExpanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
-                <Icon size={13} className="text-[#00FFA7]/60" />
-                <span className="truncate">{sec.title}</span>
-              </button>
-              {isExpanded && (
-                <div className="mt-1">
-                  {sec.nodes.map((node) => renderTreeNode(node))}
-                </div>
-              )}
-            </div>
+          <div key={sec.slug} className="mb-2">
+            <button
+              onClick={() => toggleSection(sec.slug)}
+              className="w-full flex items-center gap-2 px-2 py-1.5 text-[11px] uppercase tracking-widest text-[#667085] font-semibold hover:text-[#D0D5DD] transition-colors"
+            >
+              {collapsed[sec.slug] ? <ChevronRight size={12} /> : <ChevronDown size={12} />}
+              <Icon size={13} className="text-[#00FFA7]/60" />
+              {sec.title}
+            </button>
+            {!collapsed[sec.slug] && (
+              <div className="ml-2">
+                {sec.children.map((child) => {
+                  const matchesContent = search && child.content_preview &&
+                    !child.title.toLowerCase().includes(searchLower) &&
+                    child.content_preview.toLowerCase().includes(searchLower)
+                  const snippetStart = matchesContent
+                    ? child.content_preview!.toLowerCase().indexOf(searchLower)
+                    : -1
+                  const snippet = matchesContent && snippetStart >= 0
+                    ? '...' + child.content_preview!.slice(Math.max(0, snippetStart - 20), snippetStart + search.length + 40) + '...'
+                    : null
+
+                  return (
+                    <button
+                      key={child.slug}
+                      onClick={() => handleNav(child.slug)}
+                      className={`w-full text-left px-3 py-2 rounded-lg text-sm transition-colors mb-0.5 block ${
+                        activeSlug === child.slug
+                          ? 'text-[#00FFA7] bg-[#00FFA7]/10 border-l-2 border-[#00FFA7]'
+                          : 'text-[#667085] hover:text-[#D0D5DD] hover:bg-white/5 border-l-2 border-transparent'
+                      }`}
+                    >
+                      {child.title}
+                      {snippet && (
+                        <span className="block text-xs text-[#475467] mt-0.5 truncate">
+                          {snippet}
+                        </span>
+                      )}
+                    </button>
+                  )
+                })}
+              </div>
+            )}
+          </div>
           )
         })}
       </nav>

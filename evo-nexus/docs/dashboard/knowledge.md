@@ -63,65 +63,6 @@ Spaces are logical groupings inside a connection (e.g., "academy", "support-kb",
 /knowledge-organize action=create space_id=<space_id> slug=<slug> title="..."
 ```
 
-## UI navigation map
-
-Knowledge lives in the dashboard sidebar under **Data > Knowledge**.
-
-Use this flow when you want to ingest documents and query them with hybrid RAG:
-
-1. Open `/knowledge`
-2. Create a connection or open an existing one
-3. Go to `/knowledge/connections/:id/upload` to upload documents
-4. Go to `/knowledge/connections/:id/search` to run hybrid search
-
-### Top-level routes
-
-| Route | Purpose |
-|---|---|
-| `/knowledge` | Lists Knowledge connections (Postgres + pgvector servers) |
-| `/knowledge/settings` | Global Knowledge settings (embedder/parser configuration) |
-
-### Per-connection routes
-
-After opening a specific connection, these tabs become available:
-
-| Route | Purpose |
-|---|---|
-| `/knowledge/connections/:id` | Connection overview and status |
-| `/knowledge/connections/:id/spaces` | Manage spaces |
-| `/knowledge/connections/:id/units` | Manage learning units/modules |
-| `/knowledge/connections/:id/upload` | Upload files for ingestion |
-| `/knowledge/connections/:id/browse` | Browse ingested documents |
-| `/knowledge/connections/:id/search` | Query the knowledge base using hybrid retrieval |
-| `/knowledge/connections/:id/api-keys` | Manage public API keys for external apps |
-
-### Upload page
-
-The Upload tab is the page used to ingest documents through the dashboard UI. It supports drag-and-drop or file picker upload and sends files to the selected connection/space.
-
-Supported ingestion formats include:
-
-- PDF
-- DOCX
-- PPTX
-- XLSX
-- HTML
-- EPUB
-- TXT / Markdown
-- CSV / JSON
-- Images (OCR)
-
-### Search page
-
-The Search tab is the page used to query your ingested knowledge.
-
-The UI explicitly uses **hybrid retrieval**, combining:
-
-1. Vector similarity for semantic recall
-2. BM25 keyword matching for exact-term precision
-
-This makes `/knowledge/connections/:id/search` the main page to demonstrate the "agents that actually read your documents" workflow after content is uploaded.
-
 ## Concepts
 
 | Concept | Description |

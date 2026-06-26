@@ -80,19 +80,19 @@ def password_policy_violations(password: str, *, username: str = "", email: str 
     violations: list[str] = []
 
     if len(candidate) < 8:
-        violations.append("A senha deve ter pelo menos 8 caracteres")
+        violations.append("Password must be at least 8 characters")
     if not any(ch.islower() for ch in candidate):
-        violations.append("A senha deve incluir uma letra minúscula")
+        violations.append("Password must include a lowercase letter")
     if not any(ch.isupper() for ch in candidate):
-        violations.append("A senha deve incluir uma letra maiúscula")
+        violations.append("Password must include an uppercase letter")
     if not any(ch.isdigit() for ch in candidate):
-        violations.append("A senha deve incluir um número")
+        violations.append("Password must include a digit")
     if not any(not ch.isalnum() for ch in candidate):
-        violations.append("A senha deve incluir um caractere especial")
+        violations.append("Password must include a special character")
 
     normalized = candidate.casefold()
     if normalized in PASSWORD_COMMON_BLOCKLIST:
-        violations.append("A senha é muito comum")
+        violations.append("Password is too common")
 
     identity_tokens = {
         normalize_login_key(username),
@@ -105,7 +105,7 @@ def password_policy_violations(password: str, *, username: str = "", email: str 
 
     for token in identity_tokens:
         if len(token) >= 3 and token in normalized:
-            violations.append("A senha não deve conter seu nome de usuário ou email")
+            violations.append("Password must not contain your username or email address")
             break
 
     return violations

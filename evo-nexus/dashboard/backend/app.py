@@ -4,7 +4,6 @@ import os
 import sys
 import secrets
 import re
-import threading
 from pathlib import Path
 from datetime import timedelta
 
@@ -13,15 +12,12 @@ from flask import Flask, send_from_directory, request, jsonify
 from flask_cors import CORS
 from flask_login import LoginManager, current_user, login_user
 
-# Backend dir + workspace root
-BACKEND_DIR = Path(__file__).resolve().parent
-WORKSPACE = BACKEND_DIR.parent.parent
+# Workspace root: two levels up from backend/
+WORKSPACE = Path(__file__).resolve().parent.parent.parent
 
 # Load .env from workspace root
 load_dotenv(WORKSPACE / ".env")
 
-# Add backend/ and social-auth/ to path for legacy absolute imports.
-sys.path.insert(0, str(BACKEND_DIR))
 # Add social-auth to path
 sys.path.insert(0, str(WORKSPACE / "social-auth"))
 
@@ -97,13 +93,11 @@ except AttributeError:
 
 CORS(app, origins=_cors_allowed_origins(), supports_credentials=True)
 
-# --------------- Global error handler (JSON for all HTTP errors) ---------------
-from werkzeug.exceptions import HTTPException
-
-@app.errorhandler(HTTPException)
-def _http_exception_to_json(exc):
-    """Return JSON for all HTTP errors instead of HTML."""
-    return jsonify({"error": exc.description, "code": exc.code}), exc.code
+# --------------- Rate limiting (in-memory, single-process Flask) ---------------
+# Vault audit §2.S1 CRITICAL: all public endpoints require rate limiting.
+# The limiter singleton lives in rate_limit.py to avoid circular imports with blueprints.
+from rate_limit import limiter
+limiter.init_app(app)
 
 # --------------- Database ---------------
 from models import db, User, BrainRepoConfig, needs_setup, seed_roles, seed_systems
@@ -144,7 +138,6 @@ with app.app_context():
                 goal_id TEXT,
                 required_secrets TEXT DEFAULT '[]',
                 decision_prompt TEXT NOT NULL,
-                handler TEXT,
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL
             );
@@ -444,6 +437,14 @@ with app.app_context():
                     CHECK(status IN ('active','disabled','broken','installing','uninstalling')),
                 last_error TEXT
             );
+            CREATE TABLE IF NOT EXISTS plugin_audit_log (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                plugin_id TEXT NOT NULL,
+                action TEXT NOT NULL,
+                payload TEXT,
+                success INTEGER NOT NULL DEFAULT 1,
+                created_at TEXT NOT NULL
+            );
             CREATE TABLE IF NOT EXISTS plugin_hook_circuit_state (
                 plugin_slug TEXT NOT NULL,
                 handler_path TEXT NOT NULL,
@@ -455,10 +456,10 @@ with app.app_context():
                 PRIMARY KEY (plugin_slug, handler_path)
             );
             CREATE INDEX IF NOT EXISTS idx_plugins_status ON plugins_installed(status);
+            CREATE INDEX IF NOT EXISTS idx_plugin_audit_plugin ON plugin_audit_log(plugin_id, created_at);
             CREATE INDEX IF NOT EXISTS idx_hook_cb_disabled ON plugin_hook_circuit_state(disabled_until);
         """)
         _conn.commit()
-    # plugin_audit_log is created by db.create_all() via the SQLAlchemy model
     # --- End plugins migration ---
 
     # --- Brain Repo migration (brain-repo feature) ---
@@ -521,9 +522,6 @@ with app.app_context():
     # source_plugin: tag heartbeats that were contributed by a plugin so the
     # plugin detail page can filter them via GET /api/heartbeats?source_plugin=.
     _hb_cols = {row[1] for row in _cur.execute("PRAGMA table_info(heartbeats)").fetchall()}
-    if "handler" not in _hb_cols:
-        _cur.execute("ALTER TABLE heartbeats ADD COLUMN handler TEXT")
-        _conn.commit()
     if "source_plugin" not in _hb_cols:
         _cur.execute("ALTER TABLE heartbeats ADD COLUMN source_plugin TEXT")
         _conn.commit()
@@ -610,6 +608,27 @@ with app.app_context():
         )
         _conn.commit()
     # --- End Wave 2.2r migration ---
+
+    # --- B3 safe_uninstall migration: plugin_orphans table ---
+    _existing_tables_b3 = {row[0] for row in _cur.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()}
+    if "plugin_orphans" not in _existing_tables_b3:
+        _cur.executescript("""
+            CREATE TABLE IF NOT EXISTS plugin_orphans (
+                id TEXT PRIMARY KEY,
+                slug TEXT NOT NULL,
+                tablename TEXT NOT NULL,
+                orphaned_at TEXT NOT NULL,
+                orphaned_by_user_id INTEGER,
+                original_plugin_version TEXT,
+                original_sha256 TEXT,
+                original_publisher_url TEXT,
+                recovered_at TEXT,
+                UNIQUE(slug, tablename)
+            );
+            CREATE INDEX IF NOT EXISTS idx_plugin_orphans_slug ON plugin_orphans(slug);
+        """)
+        _conn.commit()
+    # --- End B3 safe_uninstall migration ---
 
     # Fix corrupted datetime columns (NULL or non-string values crash SQLAlchemy)
     for _tbl, _col in [("roles", "created_at"), ("users", "created_at"), ("users", "last_login")]:
@@ -858,6 +877,7 @@ from routes.knowledge_v1 import bp as knowledge_v1_bp
 from routes.databases import bp as databases_bp
 from routes.plugins import bp as plugins_bp
 from routes.mcp_servers import bp as mcp_servers_bp
+from routes.plugin_public_pages import bp as plugin_public_pages_bp
 
 # Brain Repo + Onboarding blueprints (loaded after routes are created)
 try:
@@ -930,6 +950,8 @@ app.register_blueprint(knowledge_v1_bp)
 app.register_blueprint(databases_bp)
 app.register_blueprint(plugins_bp)
 app.register_blueprint(mcp_servers_bp)
+# B2.0: plugin public pages (unauthenticated, token-bound portals)
+app.register_blueprint(plugin_public_pages_bp)
 
 # --------------- Social Auth blueprints ---------------
 from auth.youtube import bp as youtube_auth_bp
@@ -1066,65 +1088,6 @@ def serve_frontend(path):
     return {"error": "Frontend not built. Run npm build in frontend/"}, 404
 
 
-_task_poller_lock = threading.Lock()
-_task_poller_started = False
-
-
-def _run_pending_tasks():
-    """Check for pending scheduled tasks and execute them."""
-    from datetime import datetime as _dt, timezone as _tz
-    from models import ScheduledTask
-
-    try:
-        now = _dt.now(_tz.utc)
-        pending = ScheduledTask.query.filter(
-            ScheduledTask.status == "pending",
-            ScheduledTask.scheduled_at <= now,
-        ).all()
-
-        for task in pending:
-            log_path = WORKSPACE / "ADWs" / "logs" / "scheduler.log"
-            with open(log_path, "a") as log:
-                log.write(f"  [{_dt.now().strftime('%H:%M')}] Running scheduled task #{task.id}: {task.name}\n")
-
-            t = threading.Thread(target=_execute_task_with_context, args=(task.id,), daemon=True)
-            t.start()
-    except Exception:
-        pass
-
-
-def _execute_task_with_context(task_id):
-    with app.app_context():
-        from routes.tasks import _execute_task
-        _execute_task(task_id)
-
-
-def _poll_scheduled_tasks():
-    """Lightweight thread that only polls ScheduledTask — no routine scheduling."""
-    import time as _time
-    while True:
-        with app.app_context():
-            _run_pending_tasks()
-        _time.sleep(30)
-
-
-def start_task_poller() -> None:
-    """Start the in-process scheduled-task poller once per server process."""
-    global _task_poller_started
-
-    with _task_poller_lock:
-        if _task_poller_started:
-            return
-
-        task_thread = threading.Thread(
-            target=_poll_scheduled_tasks,
-            daemon=True,
-            name="task-poller",
-        )
-        task_thread.start()
-        _task_poller_started = True
-
-
 if __name__ == "__main__":
     # Read port from workspace.yaml or env, fallback to 8080
     port = int(os.environ.get("EVONEXUS_PORT", 8080))
@@ -1139,8 +1102,48 @@ if __name__ == "__main__":
     except Exception:
         pass
     # Scheduler runs as a standalone process (scheduler.py) started by start-services.sh.
-    # Only one-off ScheduledTask polling stays in-process.
-    start_task_poller()
+    # A thread here would create a duplicate instance — all routines would fire 2-3x.
+    # One-off scheduled tasks (ScheduledTask model) are checked by the standalone scheduler
+    # via _run_pending_tasks, which is called from its own loop.
+    import threading
+
+    def _run_pending_tasks():
+        """Check for pending scheduled tasks and execute them."""
+        from datetime import datetime as _dt, timezone as _tz
+        from models import ScheduledTask
+
+        try:
+            now = _dt.now(_tz.utc)
+            pending = ScheduledTask.query.filter(
+                ScheduledTask.status == "pending",
+                ScheduledTask.scheduled_at <= now,
+            ).all()
+
+            for task in pending:
+                log_path = WORKSPACE / "ADWs" / "logs" / "scheduler.log"
+                with open(log_path, "a") as log:
+                    log.write(f"  [{_dt.now().strftime('%H:%M')}] Running scheduled task #{task.id}: {task.name}\n")
+
+                t = threading.Thread(target=_execute_task_with_context, args=(task.id,), daemon=True)
+                t.start()
+        except Exception:
+            pass
+
+    def _execute_task_with_context(task_id):
+        with app.app_context():
+            from routes.tasks import _execute_task
+            _execute_task(task_id)
+
+    def _poll_scheduled_tasks():
+        """Lightweight thread that only polls ScheduledTask — no routine scheduling."""
+        import time as _time
+        while True:
+            with app.app_context():
+                _run_pending_tasks()
+            _time.sleep(30)
+
+    task_thread = threading.Thread(target=_poll_scheduled_tasks, daemon=True, name="task-poller")
+    task_thread.start()
 
     # Dev mode: EVONEXUS_DEV=1 enables Flask's auto-reloader so edits to
     # dashboard/backend/*.py take effect without a manual restart. Disabled by

@@ -59,7 +59,7 @@ let _hydrated = false
 export async function hydratePluginUiRegistry(force = false): Promise<void> {
   if (_hydrated && !force) return
   try {
-    const API = import.meta.env.DEV ? `http://localhost:${import.meta.env.VITE_API_PORT || '8081'}` : ''
+    const API = import.meta.env.DEV ? 'http://localhost:8080' : ''
     const res = await fetch(`${API}/api/plugin-ui-registry`, { credentials: 'include' })
     if (!res.ok) return
     const data: { plugins: PluginUiEntry[] } = await res.json()

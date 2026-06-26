@@ -498,7 +498,6 @@ class Heartbeat(db.Model):
     goal_id = db.Column(db.String(100), nullable=True)  # FK stub for Feature 1.2
     required_secrets = db.Column(db.Text, nullable=True, default="[]")  # JSON array
     decision_prompt = db.Column(db.Text, nullable=False)
-    handler = db.Column(db.Text, nullable=True)
     source_plugin = db.Column(db.Text, nullable=True)  # Wave 1.1: plugin slug if contributed by a plugin
     created_at = db.Column(db.String(30), default=lambda: datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ"))
     updated_at = db.Column(db.String(30), default=lambda: datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ"), onupdate=lambda: datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ"))
@@ -542,7 +541,6 @@ class Heartbeat(db.Model):
             "goal_id": self.goal_id,
             "required_secrets": self.required_secrets_list,
             "decision_prompt": self.decision_prompt,
-            "handler": self.handler,
             "created_at": self.created_at,
             "updated_at": self.updated_at,
             "last_run": last_run.to_dict() if last_run else None,

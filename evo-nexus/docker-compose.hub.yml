@@ -4,10 +4,10 @@
 # Uso rápido:
 #   $ curl -O https://raw.githubusercontent.com/EvolutionAPI/evo-nexus/main/docker-compose.hub.yml
 #   $ docker compose -f docker-compose.hub.yml up -d
-#   $ open http://localhost:8090
+#   $ open http://localhost:8080
 #
 # Tudo (providers, integrações, chaves de API, secrets) é configurado
-# pela UI após o primeiro boot — abra http://localhost:8090 e siga o
+# pela UI após o primeiro boot — abra http://localhost:8080 e siga o
 # wizard. Nenhum arquivo .env precisa ser editado à mão.
 #
 # Para DEVS que querem buildar a imagem local a partir do código-fonte,
@@ -19,16 +19,16 @@
 
 services:
   # Dashboard — Flask + React + terminal embutido + Claude CLI
-  # Abra http://localhost:8090 após o boot.
+  # Abra http://localhost:8080 após o boot.
   dashboard:
-    image: evoapicloud/evo-nexus-dashboard:1.0.0-rc5
+    image: evoapicloud/evo-nexus-dashboard:latest
     container_name: evonexus-dashboard
     ports:
-      - "8090:8090"     # Dashboard (UI + API)
+      - "8080:8080"     # Dashboard (UI + API)
       - "32352:32352"   # Terminal server (WebSocket)
     environment:
       - TZ=America/Sao_Paulo
-      - EVONEXUS_PORT=8090
+      - EVONEXUS_PORT=8080
       - TERMINAL_SERVER_PORT=32352
       - FORWARDED_ALLOW_IPS=*
     volumes:
@@ -43,7 +43,7 @@ services:
       - evonexus_agent_memory:/workspace/.claude/agent-memory
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "-fsS", "http://localhost:8090/api/version"]
+      test: ["CMD", "curl", "-fsS", "http://localhost:8080/api/version"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -54,7 +54,7 @@ services:
   # Espera ANTHROPIC_API_KEY aparecer no .env (configurado pela UI) antes
   # de iniciar — não fica em crash-loop enquanto você configura.
   telegram:
-    image: evoapicloud/evo-nexus-runtime:1.0.0-rc5
+    image: evoapicloud/evo-nexus-runtime:latest
     container_name: evonexus-telegram
     command: ["claude", "--channels", "plugin:telegram@claude-plugins-official", "--dangerously-skip-permissions"]
     environment:
@@ -76,7 +76,7 @@ services:
   # Scheduler — executa rotinas automáticas (daily, weekly, monthly).
   # Opcional: remova este serviço se não for usar rotinas automatizadas.
   scheduler:
-    image: evoapicloud/evo-nexus-runtime:1.0.0-rc5
+    image: evoapicloud/evo-nexus-runtime:latest
     container_name: evonexus-scheduler
     command: ["uv", "run", "python", "scheduler.py"]
     environment:

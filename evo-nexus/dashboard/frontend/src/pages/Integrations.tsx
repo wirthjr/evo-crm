@@ -146,7 +146,7 @@ const INTEGRATION_ICONS: Record<string, { icon: LucideIcon; color: string; color
   'licensing':      { icon: Key,           color: '#00FFA7', colorMuted: 'rgba(0,255,167,0.12)' },
   'evolution api':  { icon: MessageSquare, color: '#00FFA7', colorMuted: 'rgba(0,255,167,0.12)' },
   'evolution go':   { icon: GitBranch,     color: '#00FFA7', colorMuted: 'rgba(0,255,167,0.12)' },
-  'arco crm':        { icon: Database,      color: '#00FFA7', colorMuted: 'rgba(0,255,167,0.12)' },
+  'evo crm':        { icon: Database,      color: '#00FFA7', colorMuted: 'rgba(0,255,167,0.12)' },
   'ai image creator': { icon: Image,       color: '#F472B6', colorMuted: 'rgba(244,114,182,0.12)' },
   'github':         { icon: GitFork,       color: '#E6EDF3', colorMuted: 'rgba(230,237,243,0.12)' },
   'linear':         { icon: BookOpen,      color: '#5E6AD2', colorMuted: 'rgba(94,106,210,0.12)' },

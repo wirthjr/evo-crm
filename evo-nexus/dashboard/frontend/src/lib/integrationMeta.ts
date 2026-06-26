@@ -99,11 +99,11 @@ const INTEGRATION_META: IntegrationMeta[] = [
     ],
   },
   {
-    id: 'arco crm',
+    id: 'evo crm',
     description: 'CRM + agentes de IA (produto principal)',
     fields: [
-      { envKey: 'EVO_CRM_TOKEN', label: 'Token', hint: 'Token de acesso do Arco CRM', required: true },
-      { envKey: 'EVO_CRM_URL', label: 'URL', hint: 'URL base da instância Arco CRM', required: true },
+      { envKey: 'EVO_CRM_TOKEN', label: 'Token', hint: 'Token de acesso do Evo CRM', required: true },
+      { envKey: 'EVO_CRM_URL', label: 'URL', hint: 'URL base da instância Evo CRM', required: true },
     ],
   },
   {

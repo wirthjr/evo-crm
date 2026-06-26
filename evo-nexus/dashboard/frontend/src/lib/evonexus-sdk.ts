@@ -13,9 +13,7 @@
  *   await window.EvoNexus.writableData('pm-essentials', 'projects', 'POST', { name: 'X' })
  */
 
-import { API_BASE_URL } from './config';
-
-const API_BASE = API_BASE_URL
+const API_BASE = import.meta.env.DEV ? 'http://localhost:8080' : ''
 
 /** Credentials included for same-origin session cookie (no token needed). */
 async function apiFetch(path: string, options?: RequestInit): Promise<Response> {

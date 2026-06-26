@@ -63,7 +63,7 @@ export function KnowledgeProvider({ children }: { children: ReactNode }) {
 
   const refreshConnections = useCallback(async () => {
     try {
-      const API = import.meta.env.DEV ? `http://localhost:${import.meta.env.VITE_API_PORT || '8081'}` : ''
+      const API = import.meta.env.DEV ? 'http://localhost:8080' : ''
       const res = await fetch(`${API}/api/knowledge/connections`, { credentials: 'include' })
       if (!res.ok) return
       const data = await res.json()

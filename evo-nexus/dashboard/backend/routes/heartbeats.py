@@ -60,7 +60,6 @@ def _mirror_to_db(hb_config):
         existing.goal_id = hb_config.goal_id
         existing.required_secrets_list = hb_config.required_secrets
         existing.decision_prompt = hb_config.decision_prompt
-        existing.handler = hb_config.handler
         # Note: enabled is NOT updated from YAML on edits — UI toggle is source of truth for enabled
     else:
         new_hb = Heartbeat(
@@ -73,7 +72,6 @@ def _mirror_to_db(hb_config):
             enabled=hb_config.enabled,
             goal_id=hb_config.goal_id,
             decision_prompt=hb_config.decision_prompt,
-            handler=hb_config.handler,
         )
         new_hb.wake_triggers_list = hb_config.wake_triggers
         new_hb.required_secrets_list = hb_config.required_secrets
@@ -202,7 +200,7 @@ def update_heartbeat(heartbeat_id):
     updatable = {
         "agent", "interval_seconds", "max_turns", "timeout_seconds",
         "lock_timeout_seconds", "wake_triggers", "enabled",
-        "goal_id", "required_secrets", "decision_prompt", "handler",
+        "goal_id", "required_secrets", "decision_prompt",
     }
 
     for field, value in data.items():

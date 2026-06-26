@@ -1,6 +1,5 @@
 """Auth endpoints — login, logout, setup, users, audit."""
 
-import os
 from datetime import datetime, timezone
 from functools import wraps
 from flask import Blueprint, request, jsonify, abort
@@ -35,7 +34,7 @@ def require_permission(resource, action):
 def _require_password_strength(password: str, *, username: str = "", email: str = ""):
     violations = password_policy_violations(password, username=username, email=email)
     if violations:
-        abort(400, description="Senha inválida: " + "; ".join(violations))
+        abort(400, description="; ".join(violations))
 
 
 def _lockout_description(lock_until: datetime) -> str:
@@ -131,7 +130,7 @@ def _save_workspace_config(ws: dict):
         },
         "agents": {a: True for a in ws.get("agents", [])},
         "integrations": {i: True for i in ws.get("integrations", [])},
-        "dashboard": {"port": int(os.environ.get("EVONEXUS_PORT", "8081"))},
+        "dashboard": {"port": 8080},
     }
 
     yaml_path = config_dir / "workspace.yaml"

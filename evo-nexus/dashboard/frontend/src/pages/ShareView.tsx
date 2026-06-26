@@ -3,9 +3,7 @@ import { useParams } from 'react-router-dom'
 import Markdown from '../components/Markdown'
 import CodeView from '../components/workspace/CodeView'
 
-import { API_BASE_URL } from '../lib/config';
-
-const API_BASE = API_BASE_URL
+const API_BASE = import.meta.env.DEV ? 'http://localhost:8080' : ''
 
 type ViewState =
   | { status: 'loading' }

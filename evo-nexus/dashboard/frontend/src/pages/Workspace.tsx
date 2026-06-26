@@ -11,9 +11,7 @@ import UploadDropzone from '../components/workspace/UploadDropzone'
 import FileTabs, { type TabEntry } from '../components/workspace/FileTabs'
 import ShareDialog from '../components/workspace/ShareDialog'
 
-import { API_BASE_URL } from '../lib/config';
-
-const API_BASE = API_BASE_URL
+const API_BASE = import.meta.env.DEV ? 'http://localhost:8080' : ''
 
 // Toast
 interface Toast {

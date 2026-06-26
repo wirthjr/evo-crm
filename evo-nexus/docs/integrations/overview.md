@@ -53,7 +53,7 @@ Direct HTTP calls to service APIs, executed by skills and routines via Python sc
 | LinkedIn | @pixel | `int-linkedin`, `social-linkedin-report` |
 | Evolution API | @pulse | `int-evolution-api`, `pulse-daily` |
 | Evolution Go | @pulse | `int-evolution-go`, `pulse-daily` |
-| Arco CRM | @nex | `int-evo-crm` |
+| Evo CRM | @nex | `int-evo-crm` |
 
 API clients read credentials from `.env` at runtime.
 
@@ -140,7 +140,7 @@ See individual integration guides for setup steps:
 **Evolution Platform:**
 - [Evolution API](evolution-api.md) -- WhatsApp instances and messaging
 - [Evolution Go](evolution-go.md) -- Evolution Go instances
-- [Arco CRM](evo-crm.md) -- CRM contacts, conversations, pipelines
+- [Evo CRM](evo-crm.md) -- CRM contacts, conversations, pipelines
 
 ## Multi-Account Support
 

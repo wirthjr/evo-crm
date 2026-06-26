@@ -454,7 +454,7 @@ export default function Topics() {
     selectedStatuses.forEach(s => params.append('status', s))
     selectedPriorities.forEach(p => params.append('priority', p))
     if (selectedAssignee) params.set('assignee_agent', selectedAssignee)
-    const base = import.meta.env.DEV ? `http://localhost:${import.meta.env.VITE_API_PORT || '8081'}` : ''
+    const base = import.meta.env.DEV ? 'http://localhost:8080' : ''
     window.open(`${base}/api/tickets/export.csv?${params.toString()}`, '_blank')
   }
 

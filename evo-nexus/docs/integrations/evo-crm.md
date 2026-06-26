@@ -1,12 +1,12 @@
-# Arco CRM Integration
+# Evo CRM Integration
 
-Arco CRM integration connects EvoNexus to the AI-powered CRM platform for managing contacts, conversations, pipelines, and labels.
+Evo CRM integration connects EvoNexus to the AI-powered CRM platform for managing contacts, conversations, pipelines, and labels.
 
 ## Setup
 
 ### 1. Get Your API Credentials
 
-1. Deploy or access your Arco CRM instance — see [github.com/EvolutionAPI/evo-crm-community](https://github.com/EvolutionAPI/evo-crm-community)
+1. Deploy or access your Evo CRM instance — see [github.com/EvolutionAPI/evo-crm-community](https://github.com/EvolutionAPI/evo-crm-community)
 2. Generate an API token from the CRM admin settings
 3. Copy your **CRM URL** and **API Token**
 
@@ -29,7 +29,7 @@ Claude uses the `int-evo-crm` skill to query the CRM API and return your data.
 
 ## What It Does
 
-The Arco CRM integration provides:
+The Evo CRM integration provides:
 
 | Feature | Description |
 |---|---|
@@ -40,7 +40,7 @@ The Arco CRM integration provides:
 | **Pipelines** | View and manage sales pipelines with stages and items |
 | **Labels** | Organize contacts and conversations with labels |
 
-## Skills That Use Arco CRM
+## Skills That Use Evo CRM
 
 | Skill | What it does |
 |---|---|
@@ -66,11 +66,11 @@ The Arco CRM integration provides:
 > List all open conversations in the WhatsApp inbox
 ```
 
-## Arco CRM + Evolution API
+## Evo CRM + Evolution API
 
-Arco CRM works best alongside Evolution API or Evolution Go. The CRM manages customer relationships and pipelines, while the Evolution messaging APIs handle WhatsApp communication. Together, they provide a complete customer engagement stack:
+Evo CRM works best alongside Evolution API or Evolution Go. The CRM manages customer relationships and pipelines, while the Evolution messaging APIs handle WhatsApp communication. Together, they provide a complete customer engagement stack:
 
-- **Arco CRM** — contacts, pipelines, conversation management
+- **Evo CRM** — contacts, pipelines, conversation management
 - **Evolution API / Go** — message delivery and WhatsApp instance management
 
 ## Security Notes

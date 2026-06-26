@@ -303,47 +303,27 @@ def run_skill(
 
     Args:
         notify_telegram: Controls post-skill Telegram notification.
-            False (default) — no notification.
-            True            — Python sends ONE Telegram after the skill; reads
-                              chat_id from TELEGRAM_CHAT_ID env var.
+            False (default) — no notification (skill must NOT call reply() either).
+            True            — appends notification instruction; reads chat_id from
+                              TELEGRAM_CHAT_ID env var.
             "<chat_id>"     — same as True but overrides the chat_id.
-
-    The agent is asked to output a line "TELEGRAM_MSG: <text>" in its stdout.
-    Python reads that line and calls send_telegram() exactly once.
-    The agent NEVER calls the Telegram MCP tool directly.
     """
-    chat_id = None
+    prompt = f"Execute the skill /{skill_name} {args}".strip()
     if notify_telegram:
         chat_id = (
             notify_telegram
             if isinstance(notify_telegram, str)
             else os.environ.get("TELEGRAM_CHAT_ID", "")
-        ) or None
-
-    prompt = f"Execute the skill /{skill_name} {args}".strip()
-    if chat_id:
-        prompt += (
-            f"\n\n---\n"
-            f"Ao finalizar, escreva na última linha do output:\n"
-            f"TELEGRAM_MSG: [emoji] [nome da rotina] [data] | [resultado 1] | [resultado 2]\n"
-            f"Apenas UMA linha TELEGRAM_MSG:. NÃO use a ferramenta Telegram/reply — "
-            f"o sistema Python lê essa linha e envia a notificação automaticamente.\n"
-            f"---"
         )
-
-    result = run_claude(prompt, log_name or skill_name, timeout, agent=agent)
-
-    if chat_id and result.get("returncode", -1) == 0:
-        stdout = result.get("stdout", "")
-        for line in reversed(stdout.splitlines()):
-            line = line.strip()
-            if line.startswith("TELEGRAM_MSG:"):
-                msg = line[len("TELEGRAM_MSG:"):].strip()
-                if msg:
-                    send_telegram(msg, chat_id=chat_id)
-                break  # only ever send one message
-
-    return result
+        if chat_id:
+            prompt += (
+                f"\n\nAo concluir TODOS os passos acima, envie UMA única mensagem Telegram via:"
+                f'\nreply(chat_id="{chat_id}", text="...")'
+                f"\nFormato: emoji + nome da rotina + principais resultados em 2-3 linhas."
+                f"\nCRÍTICO: chame reply() EXATAMENTE UMA VEZ, somente aqui no final."
+                f" Não envie mensagens intermediárias nem de progresso."
+            )
+    return run_claude(prompt, log_name or skill_name, timeout, agent=agent)
 
 
 def run_script(func, log_name: str = "unnamed", timeout: int = 120) -> dict:

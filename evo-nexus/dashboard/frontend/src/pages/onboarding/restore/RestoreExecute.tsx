@@ -21,7 +21,7 @@ interface RestoreExecuteProps {
   onRetry: () => void
 }
 
-const API = import.meta.env.DEV ? `http://localhost:${import.meta.env.VITE_API_PORT || '8081'}` : ''
+const API = import.meta.env.DEV ? 'http://localhost:8080' : ''
 
 export default function RestoreExecute({ snapshot, onComplete, onRetry }: RestoreExecuteProps) {
   const { t } = useTranslation()

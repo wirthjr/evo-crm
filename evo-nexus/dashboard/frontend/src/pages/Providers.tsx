@@ -180,7 +180,6 @@ export default function Providers() {
   const [loading, setLoading] = useState(true)
   const [configOpen, setConfigOpen] = useState<string | null>(null)
   const [editVars, setEditVars] = useState<ProviderEnvVars>({})
-  const [maskedSecrets, setMaskedSecrets] = useState<Record<string, boolean>>({})
   const [saving, setSaving] = useState(false)
   const [testing, setTesting] = useState<string | null>(null)
   const [testResults, setTestResults] = useState<Record<string, { success: boolean; message: string }>>({})
@@ -238,15 +237,11 @@ export default function Providers() {
   const openConfig = (prov: Provider) => {
     setConfigOpen(prov.id)
     const vars: ProviderEnvVars = {}
-    const masked: Record<string, boolean> = {}
     for (const [k, v] of Object.entries(prov.env_vars)) {
       if (isFlag(k)) continue
-      const isMasked = isSecret(k) && v.includes('****')
-      vars[k] = isMasked ? '' : v
-      masked[k] = isMasked
+      vars[k] = v.includes('****') ? '' : v
     }
     setEditVars(vars)
-    setMaskedSecrets(masked)
     // Prefetch available models so the MODEL field renders as a real dropdown.
     // - codex_auth: static list from backend, always available.
     // - openai:     needs a valid API key first; we fetch when the user types.
@@ -327,11 +322,6 @@ export default function Providers() {
     try {
       const prov = providers.find(p => p.id === configOpen)
       const finalVars = { ...editVars }
-      for (const [key, wasMasked] of Object.entries(maskedSecrets)) {
-        if (wasMasked && !finalVars[key]?.trim()) {
-          delete finalVars[key]
-        }
-      }
       if (prov?.default_base_url && !finalVars.OPENAI_BASE_URL) finalVars.OPENAI_BASE_URL = prov.default_base_url
       if (prov?.default_model) {
         const mk = Object.keys(finalVars).find(k => k.includes('MODEL'))
@@ -562,9 +552,6 @@ export default function Providers() {
                             onChange={(e) => {
                               const v = e.target.value
                               setEditVars(prev => ({ ...prev, [key]: v }))
-                              if (isSecret(key)) {
-                                setMaskedSecrets(prev => ({ ...prev, [key]: false }))
-                              }
                               // When the OpenAI API key changes, fetch models (debounced)
                               if (isApiKeyField && prov.id === 'openai') {
                                 scheduleOpenAIModelFetch(v)

@@ -180,7 +180,7 @@ export default function Triggers() {
 
   const copyWebhookUrl = (t: TriggerItem) => {
     const base = window.location.origin.includes('localhost:5173')
-      ? `http://localhost:${import.meta.env.VITE_API_PORT || '8081'}`
+      ? 'http://localhost:8080'
       : window.location.origin
     navigator.clipboard.writeText(`${base}/api/triggers/webhook/${t.id}`)
     setCopied(t.id)

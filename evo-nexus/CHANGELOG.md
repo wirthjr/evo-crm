@@ -5,6 +5,27 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.33.0] - 2026-04-25
+
+Plugin contract release. Five PRs merged in one day to unblock the EvoNexus Plugin Nutri (and any future plugin needing per-endpoint role enforcement, public token-bound portals, or safe uninstall). Plus a UX fix so `409 CONFLICT` from plugin install actually says *why* it conflicted.
+
+### Added
+
+- **`requires_role` on `PluginWritableResource`** (PR #55) — plugins can declare a list of roles allowed on each writable endpoint. The host returns `403` when `current_user.role` is not in the list. `'admin'` always passes (super-user override). Backwards compatible: resources without the field accept any authenticated user.
+- **Auto-injected readonly bind params** (PR #55) — every `readonly_data` query receives `:current_user_id` and `:current_user_role` server-side. Plugins reference them directly in SQL for scoping (`WHERE primary_nutritionist_id = :current_user_id`). Both names are reserved — clients that try to spoof them via `?current_user_id=...` get `400`.
+- **`public_pages` capability** (PR #53) — token-bound public portals at `/p/{slug}/{route_prefix}/{token}`. Token validated against a plugin-declared `token_source.column`. CSP, rate limit, and security headers applied. Read-only `readonly_data` queries can be exposed to the portal via `public_via` + `bind_token_param`.
+- **HTML shell content negotiation** (PR #56) — when a request includes `text/html` in `Accept`, the host renders a minimal HTML shell that loads the plugin bundle as a module and instantiates the declared custom element with `data-token`. Programmatic clients (`Accept: application/javascript`, default `*/*`) keep getting the raw bundle. Plugins ship a single JS bundle and get a working browser experience for free.
+- **`safe_uninstall` capability** (PR #54) — three-step uninstall wizard with `preserved_tables` (renamed to `_orphan_{slug}_*` instead of dropped), pre-uninstall hook (sandboxed: read-only DB, no `BRAIN_REPO_MASTER_KEY`), and required user confirmation (checkbox + typed phrase + ZIP password). Reinstall verifies SHA256 and restores access to preserved data.
+- **Rate limit + security headers** (PR #52) — `flask-limiter` with in-memory storage on the public share endpoint and any future `/p/...` route. Five security headers applied to public responses (`Referrer-Policy`, `Cache-Control: no-store`, HSTS, `X-Content-Type-Options`, `Pragma`).
+
+### Fixed
+
+- **Plugin install wizard now shows the actual reason for `409 CONFLICT`.** The frontend was treating any 4xx as an opaque error string. Now `buildError` in `lib/api.ts` falls back to `data.conflicts[0]` when the standard `error`/`message` fields are absent (which is the case for the plugin preview endpoint), so a version mismatch shows up as `"409 CONFLICT: Plugin 'nutri' requires EvoNexus >= 0.33.0, but installed version is 0.32.3."` instead of just `"409 CONFLICT"`. `PluginInstallModal` also fixes the type of `conflicts` (was `Record<string, unknown>`, the backend always returned `string[]`) and renders each conflict as a list item.
+
+### Compat
+
+- All existing plugins (PM Essentials, etc.) work unchanged. New manifest fields default to absent / `None` and the auto-injected bind params are silently ignored if the SQL doesn't reference them. The `409` body shape for plugin install was already `{conflicts: [...], manifest, ...}` — only the frontend's interpretation changed.
+
 ## [0.32.3] - 2026-04-25
 
 Patch release fixing a long-standing Workspace UI bug where folders refused to open and the dev console flooded with `400 Path is a directory` requests, plus a small UX win on the file share dialog (reuse existing share links instead of generating a new token every time). Also includes the upstream PR #51 (private-repo plugin update flow + ClickUp webhook compat + DetachedInstanceError).
@@ -73,7 +94,7 @@ Minor release introducing the **Plugin System v1** — a full extensibility laye
 - **Plugin install sources restricted (hardening)** — `resolve_source` now rejects local filesystem paths, `file://`, `ssh://` and non-HTTPS schemes with a clear `ValueError`. Only `github:`, `https://` tarballs, or uploaded ZIP / tar.gz archives are accepted. Closes the doc/code mismatch where the skill promised rejection but the code accepted anything via `Path(s)`.
 - **Plugin triggers ship disabled by default** — regardless of YAML value, unless explicitly `"true"`, so a malicious plugin cannot auto-fire hooks on install.
 - **Telegram notifications moved from skills to routines** — `run_skill(notify_telegram=True)` appends a one-shot send instruction at the end of the prompt, guaranteeing exactly one send per execution (was duplicated when skills embedded the instruction themselves). Skills cleaned: `prod-end-of-day`, `prod-good-morning`, `pulse-faq-sync`, `pulse-daily`.
-- **Integration status verifies all declared env keys (#49)** — `list_integrations` previously checked only a single key per entry, so Evolution API / Evolution Go / Arco CRM showed as "configured" with only the token set (URL missing) or vice-versa. Schema is now `keys: list[str]`; an integration is considered configured only when every declared key is non-empty.
+- **Integration status verifies all declared env keys (#49)** — `list_integrations` previously checked only a single key per entry, so Evolution API / Evolution Go / Evo CRM showed as "configured" with only the token set (URL missing) or vice-versa. Schema is now `keys: list[str]`; an integration is considered configured only when every declared key is non-empty.
 - **Bling integration keys corrected (#49)** — `BLING_ACCESS_TOKEN` (which existed nowhere in the repo) replaced with `BLING_CLIENT_ID` / `BLING_CLIENT_SECRET` used by the real OAuth2 flow. **Migration:** users who set `BLING_ACCESS_TOKEN` manually must run `make bling-auth` to obtain the OAuth credentials.
 - **Omie integration now requires both `OMIE_APP_KEY` and `OMIE_APP_SECRET`** — backend was only checking the key, so a half-configured Omie appeared green (#49).
 
@@ -1131,9 +1152,9 @@ Patch iterating on the v0.29.0 thread-areas feature: UI rebrand, navigation poli
 ### Added
 - **Evolution API skill** (`int-evolution-api`) — 33 commands: instances, messages (text, media, location, contact, buttons, lists, polls), chats, groups, webhooks
 - **Evolution Go skill** (`int-evolution-go`) — 24 commands: instances, messages, reactions, presence
-- **Arco CRM skill** (`int-evo-crm`) — 48 commands: contacts, conversations, messages, inboxes, pipelines, labels
+- **Evo CRM skill** (`int-evo-crm`) — 48 commands: contacts, conversations, messages, inboxes, pipelines, labels
 - **Integration docs** — 3 new guides: `docs/integrations/evolution-api.md`, `evolution-go.md`, `evo-crm.md`
-- **Dashboard integrations** — Evolution API, Evolution Go, and Arco CRM cards on Integrations page
+- **Dashboard integrations** — Evolution API, Evolution Go, and Evo CRM cards on Integrations page
 - **`.env.example`** — added `EVOLUTION_API_URL/KEY`, `EVOLUTION_GO_URL/KEY`, `EVO_CRM_URL/TOKEN`
 
 ### Changed

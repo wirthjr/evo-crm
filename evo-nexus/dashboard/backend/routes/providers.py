@@ -131,24 +131,6 @@ def _sanitize_env_vars(env_vars: dict) -> dict:
     return safe
 
 
-def _missing_required_env_vars(provider: dict) -> list[str]:
-    """Return required provider env vars that are still empty."""
-    env_vars = provider.get("env_vars", {}) or {}
-    missing = []
-    for key, value in env_vars.items():
-        if key in (
-            "CLAUDE_CODE_USE_OPENAI",
-            "CLAUDE_CODE_USE_GEMINI",
-            "CLAUDE_CODE_USE_BEDROCK",
-            "CLAUDE_CODE_USE_VERTEX",
-        ):
-            continue
-        if isinstance(value, str) and value.strip():
-            continue
-        missing.append(key)
-    return missing
-
-
 def _save_codex_auth(tokens: dict):
     """Save tokens to ~/.codex/auth.json in the format OpenClaude/Codex expects.
 
@@ -362,13 +344,6 @@ def test_provider(provider_id):
             "error": f"'{cli}' not found in PATH",
             "hint": f"npm install -g {'@gitlawb/openclaude' if cli == 'openclaude' else '@anthropic-ai/claude-code'}",
         })
-
-    missing = _missing_required_env_vars(provider)
-    if missing:
-        return jsonify({
-            "success": False,
-            "error": f"Missing required config: {', '.join(missing)}",
-        }), 400
 
     # Build env with sanitized provider vars
     env_vars = _sanitize_env_vars(

@@ -22,15 +22,14 @@ class HeartbeatConfig(BaseModel):
     id: Annotated[str, Field(min_length=1, max_length=100, pattern=r"^[a-z0-9-]+$")]
     agent: Annotated[str, Field(min_length=1, max_length=100)]
     interval_seconds: Annotated[int, Field(ge=60)]
-    max_turns: Annotated[int, Field(ge=0, le=100)] = 10
+    max_turns: Annotated[int, Field(ge=1, le=100)] = 10
     timeout_seconds: Annotated[int, Field(ge=30, le=3600)] = 600
     lock_timeout_seconds: Annotated[int, Field(ge=60)] = 1800
     wake_triggers: Annotated[List[WakeTrigger], Field(min_length=1)]
     enabled: bool = False
     goal_id: Optional[str] = None
     required_secrets: List[str] = Field(default_factory=list)
-    decision_prompt: str = ""
-    handler: Optional[str] = None
+    decision_prompt: Annotated[str, Field(min_length=20)]
     source_plugin: Optional[str] = None  # AC4: set to plugin slug for plugin-contributed heartbeats
 
     @field_validator("agent")
@@ -69,33 +68,8 @@ class HeartbeatConfig(BaseModel):
             )
         return list(dict.fromkeys(v))  # deduplicate preserving order
 
-    @field_validator("handler")
-    @classmethod
-    def handler_must_be_module_function(cls, v: str | None) -> str | None:
-        if v is None:
-            return v
-        value = v.strip()
-        if not value:
-            return None
-        if "." not in value:
-            raise ValueError("handler must use module.function format")
-        module_name, function_name = value.rsplit(".", 1)
-        if not module_name or not function_name:
-            raise ValueError("handler must use module.function format")
-        return value
-
     @model_validator(mode="after")
     def interval_trigger_requires_interval_field(self) -> "HeartbeatConfig":
-        if self.handler:
-            if self.max_turns != 0:
-                raise ValueError("Heartbeats with handler must set max_turns to 0")
-        else:
-            if self.max_turns < 1:
-                raise ValueError("Heartbeats without handler must set max_turns >= 1")
-            if len(self.decision_prompt.strip()) < 20:
-                raise ValueError(
-                    "Heartbeats without handler must set decision_prompt with at least 20 characters"
-                )
         return self
 
 

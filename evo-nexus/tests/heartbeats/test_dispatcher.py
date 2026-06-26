@@ -42,8 +42,6 @@ def tmp_db(tmp_path):
             goal_id TEXT,
             required_secrets TEXT DEFAULT '[]',
             decision_prompt TEXT NOT NULL,
-            handler TEXT,
-            source_plugin TEXT,
             created_at TEXT NOT NULL,
             updated_at TEXT NOT NULL
         );
@@ -78,7 +76,7 @@ def tmp_db(tmp_path):
         INSERT INTO heartbeats VALUES (
             'test-hb', 'atlas-project', 3600, 10, 300, 1800,
             '["interval","manual"]', 1, null, '[]',
-            'Decide: act or skip? Valid long enough prompt.', null, null, ?, ?
+            'Decide: act or skip? Valid long enough prompt.', ?, ?
         )
     """, (now, now))
     conn.commit()
@@ -213,41 +211,3 @@ def test_dispatch_records_trigger_event(tmp_db):
         ).fetchone()
         conn.close()
         assert row is not None
-
-
-def test_sync_heartbeats_to_db_persists_handler_field(tmp_db):
-    """YAML-backed handler heartbeats should keep their handler in the DB."""
-    import importlib
-    from heartbeat_schema import HeartbeatConfig, HeartbeatsFile
-    import heartbeat_dispatcher as dispatcher
-
-    cfg = HeartbeatsFile(
-        heartbeats=[
-            HeartbeatConfig.model_validate(
-                {
-                    "id": "test-hb",
-                    "agent": "system",
-                    "interval_seconds": 900,
-                    "max_turns": 0,
-                    "timeout_seconds": 60,
-                    "lock_timeout_seconds": 1800,
-                    "wake_triggers": ["interval", "manual"],
-                    "enabled": False,
-                    "goal_id": None,
-                    "required_secrets": [],
-                    "decision_prompt": "",
-                    "handler": "plugin_integration_health.tick",
-                }
-            )
-        ]
-    )
-
-    importlib.reload(dispatcher)
-    with patch.object(dispatcher, "_get_db", lambda: _row_conn(tmp_db)):
-        with patch("heartbeat_schema.load_heartbeats_yaml", return_value=cfg):
-            dispatcher._sync_heartbeats_to_db()
-
-    conn = sqlite3.connect(str(tmp_db))
-    row = conn.execute("SELECT handler, max_turns, decision_prompt FROM heartbeats WHERE id='test-hb'").fetchone()
-    conn.close()
-    assert row == ("plugin_integration_health.tick", 0, "")

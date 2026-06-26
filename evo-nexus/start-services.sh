@@ -35,7 +35,7 @@ mkdir -p "$SCRIPT_DIR/logs"
 # Python binary we spawn and the absolute script path so at worst we match
 # siblings inside this repo, never strangers.
 pkill -f 'terminal-server/bin/server.js' 2>/dev/null
-DASHBOARD_PORT="${EVONEXUS_PORT:-8090}"
+DASHBOARD_PORT="${EVONEXUS_PORT:-8080}"
 if command -v fuser >/dev/null 2>&1; then
   fuser -k -n tcp "$DASHBOARD_PORT" 2>/dev/null || true
 elif command -v lsof >/dev/null 2>&1; then

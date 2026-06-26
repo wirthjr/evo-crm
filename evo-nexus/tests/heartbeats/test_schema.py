@@ -64,36 +64,17 @@ def test_valid_all_wake_triggers():
     assert len(hb.wake_triggers) == 5
 
 
-def test_valid_handler_heartbeat_allows_zero_turns_and_empty_prompt():
-    """In-process handlers may skip Claude turns and the decision prompt."""
-    from heartbeat_schema import HeartbeatConfig
-
-    hb = HeartbeatConfig.model_validate({
-        "id": "integrations-health",
-        "agent": "system",
-        "interval_seconds": 900,
-        "max_turns": 0,
-        "wake_triggers": ["interval", "manual"],
-        "decision_prompt": "",
-        "handler": "plugin_integration_health.tick",
-    })
-    assert hb.max_turns == 0
-    assert hb.decision_prompt == ""
-    assert hb.handler == "plugin_integration_health.tick"
-
-
 def test_valid_seeds_from_yaml():
-    """Seed heartbeats in config/heartbeats.yaml should parse without error."""
+    """The 3 seed heartbeats in config/heartbeats.yaml should parse without error."""
     from heartbeat_schema import load_heartbeats_yaml
 
     cfg = load_heartbeats_yaml()
-    assert len(cfg.heartbeats) >= 4
+    assert len(cfg.heartbeats) >= 3
 
     ids = [h.id for h in cfg.heartbeats]
     assert "atlas-4h" in ids
     assert "zara-2h" in ids
     assert "flux-6h" in ids
-    assert "integrations-health" in ids
 
     # All seeds should be disabled by default
     for hb in cfg.heartbeats:
@@ -180,24 +161,6 @@ def test_invalid_decision_prompt_too_short():
         })
     errors = exc_info.value.errors()
     assert any("decision_prompt" in str(e) for e in errors)
-
-
-def test_invalid_handler_with_positive_max_turns():
-    """In-process handlers must not spend Claude turns."""
-    from pydantic import ValidationError
-    from heartbeat_schema import HeartbeatConfig
-
-    with pytest.raises(ValidationError) as exc_info:
-        HeartbeatConfig.model_validate({
-            "id": "bad-handler",
-            "agent": "system",
-            "interval_seconds": 900,
-            "max_turns": 1,
-            "wake_triggers": ["manual"],
-            "decision_prompt": "",
-            "handler": "plugin_integration_health.tick",
-        })
-    assert "max_turns" in str(exc_info.value)
 
 
 def test_invalid_nonexistent_agent():
@@ -289,28 +252,6 @@ def test_atomic_yaml_write_and_read():
         assert len(loaded.heartbeats) == 1
         assert loaded.heartbeats[0].id == "write-test"
         assert loaded.heartbeats[0].interval_seconds == 3600
-
-
-def test_handler_round_trip_yaml_write_and_read():
-    """Handler heartbeats should keep handler metadata on disk."""
-    from heartbeat_schema import HeartbeatConfig, HeartbeatsFile, save_heartbeats_yaml, load_heartbeats_yaml
-
-    hb = HeartbeatConfig.model_validate({
-        "id": "handler-write-test",
-        "agent": "system",
-        "interval_seconds": 900,
-        "max_turns": 0,
-        "wake_triggers": ["manual"],
-        "decision_prompt": "",
-        "handler": "plugin_integration_health.tick",
-    })
-    file_data = HeartbeatsFile(heartbeats=[hb])
-
-    with tempfile.TemporaryDirectory() as tmpdir:
-        path = Path(tmpdir) / "heartbeats.yaml"
-        save_heartbeats_yaml(file_data, path)
-        loaded = load_heartbeats_yaml(path)
-        assert loaded.heartbeats[0].handler == "plugin_integration_health.tick"
 
 
 def test_empty_yaml_returns_empty_file():

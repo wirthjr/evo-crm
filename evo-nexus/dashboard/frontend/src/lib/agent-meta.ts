@@ -105,7 +105,7 @@ const DEFAULT_META: AgentMeta = {
 export async function hydrateAgentMeta(force = false): Promise<void> {
   if (_hydrated && !force) return
   try {
-    const API = import.meta.env.DEV ? `http://localhost:${import.meta.env.VITE_API_PORT || '8081'}` : ''
+    const API = import.meta.env.DEV ? 'http://localhost:8080' : ''
     const res = await fetch(`${API}/api/agent-meta`, { credentials: 'include' })
     if (!res.ok) return  // silently keep seed on non-2xx
     const data: Record<string, { label: string; avatar_url: string | null }> = await res.json()

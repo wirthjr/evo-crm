@@ -101,7 +101,6 @@ exec 200>&-
 
 # --- 4. Symlinks so the app finds files at the paths it expects ------------
 ln -sfn "$CONFIG_DIR/.env" /workspace/.env
-
 if [ ! -e /workspace/CLAUDE.md ] && [ ! -L /workspace/CLAUDE.md ]; then
     ln -sfn "$CONFIG_DIR/CLAUDE.md" /workspace/CLAUDE.md
 fi

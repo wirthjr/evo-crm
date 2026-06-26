@@ -10,6 +10,7 @@ B2 (Raven): per-slug fcntl lock prevents concurrent installs of the same plugin.
 """
 from __future__ import annotations
 
+import fcntl
 import json
 import logging
 import os
@@ -17,11 +18,6 @@ import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
-
-try:
-    import fcntl
-except ImportError:
-    fcntl = None  # Windows compatibility
 
 logger = logging.getLogger(__name__)
 
@@ -62,8 +58,7 @@ class InstallLock:
         self._lock_path.parent.mkdir(parents=True, exist_ok=True)
         self._fd = os.open(str(self._lock_path), os.O_CREAT | os.O_WRONLY, 0o644)
         try:
-            if fcntl:
-                fcntl.flock(self._fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            fcntl.flock(self._fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError:
             os.close(self._fd)
             self._fd = None
@@ -76,8 +71,7 @@ class InstallLock:
     def __exit__(self, *_):
         if self._fd is not None:
             try:
-                if fcntl:
-                    fcntl.flock(self._fd, fcntl.LOCK_UN)
+                fcntl.flock(self._fd, fcntl.LOCK_UN)
                 os.close(self._fd)
             except OSError:
                 pass

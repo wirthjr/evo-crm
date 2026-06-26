@@ -41,7 +41,7 @@ The stack intentionally ships **zero API keys and zero integration tokens**.
 Everything is configured through the dashboard after the first boot:
 
 - **Providers** (`/providers`) — Anthropic, OpenAI API Key, Codex OAuth, OpenRouter, Gemini, etc.
-- **Integrations** (`/integrations`) — Telegram, Stripe, Omie, Bling, Asaas, Fathom, Todoist, GitHub, Linear, Gmail, Calendar, YouTube, Instagram, LinkedIn, Evolution API, Arco CRM, …
+- **Integrations** (`/integrations`) — Telegram, Stripe, Omie, Bling, Asaas, Fathom, Todoist, GitHub, Linear, Gmail, Calendar, YouTube, Instagram, LinkedIn, Evolution API, Evo CRM, …
 - **Env editor** — anything else
 
 When you save a value in the dashboard, it lands in `/workspace/config/.env`
@@ -62,7 +62,7 @@ long-running service. External REST APIs do not.
 | WhatsApp (Evolution API / Go) | ❌ Not needed | External HTTP API — run the `evolution_api` stack separately |
 | Stripe / Omie / Bling / Asaas / Fathom / Todoist | ❌ Not needed | External REST APIs, called on demand |
 | GitHub / Linear / Gmail / Calendar / YouTube / Instagram / LinkedIn | ❌ Not needed | OAuth via dashboard, REST calls on demand |
-| Arco CRM | ❌ Not needed | Reached via cross-stack HTTP over the shared Traefik network |
+| Evo CRM | ❌ Not needed | Reached via cross-stack HTTP over the shared Traefik network |
 
 ## Deploy flow
 
