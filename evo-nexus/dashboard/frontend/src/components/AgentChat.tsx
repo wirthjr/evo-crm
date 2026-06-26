@@ -134,12 +134,13 @@ export default function AgentChat({ agent, sessionId, accentColor = '#00FFA7', e
   useEffect(() => {
     if (!sessionId) return
 
-    setStatus('connecting')
-    setErrorMsg(null)
     let cancelled = false
     let ws: WebSocket | null = null
 
-    ;(async () => {
+    const connect = async () => {
+      setStatus('connecting')
+      setErrorMsg(null)
+
       // 1) HTTP preflight — fails fast on ECONNREFUSED so we can show a real error
       //    instead of hanging in 'connecting' forever (same pattern as AgentTerminal).
       try {
@@ -287,10 +288,48 @@ export default function AgentChat({ agent, sessionId, accentColor = '#00FFA7', e
           ws!.send(JSON.stringify({ type: 'ping' }))
         }
       }, 25000)
-    })()
+    }
+
+    connect()
+
+    // Handle back-forward cache (bfcache) — re-establish WebSocket when
+    // the page is restored from bfcache, and close it cleanly before
+    // the page enters bfcache.
+    const handlePageshow = (e: PageTransitionEvent) => {
+      if (e.persisted) {
+        if (ws) {
+          ws.onclose = null
+          ws.onerror = null
+          try { ws.close() } catch {}
+          ws = null
+        }
+        if (pingRef.current) {
+          clearInterval(pingRef.current)
+          pingRef.current = null
+        }
+        cancelled = false
+        connect()
+      }
+    }
+    const handlePagehide = () => {
+      if (ws) {
+        ws.onclose = null
+        ws.onerror = null
+        ws.close()
+        ws = null
+      }
+      if (pingRef.current) {
+        clearInterval(pingRef.current)
+        pingRef.current = null
+      }
+    }
+    window.addEventListener('pageshow', handlePageshow)
+    window.addEventListener('pagehide', handlePagehide)
 
     return () => {
       cancelled = true
+      window.removeEventListener('pageshow', handlePageshow)
+      window.removeEventListener('pagehide', handlePagehide)
       if (pingRef.current) { clearInterval(pingRef.current); pingRef.current = null }
       try { ws?.close() } catch {}
       wsRef.current = null

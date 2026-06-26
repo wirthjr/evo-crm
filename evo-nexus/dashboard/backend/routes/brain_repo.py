@@ -146,13 +146,14 @@ def _initialize_remote_brain_repo(
         return None
 
     try:
+        git_bin = git_ops.get_git_executable()
         local_path.mkdir(parents=True, exist_ok=True)
 
         # We use ``git init`` + ``remote add`` rather than ``git clone`` because
         # the remote is empty and ``clone`` of an empty repo emits warnings and
         # leaves an unhelpful state.
         subprocess.run(
-            ["git", "init", "-b", "main"],
+            [git_bin, "init", "-b", "main"],
             cwd=local_path, check=True, capture_output=True, timeout=30,
         )
         # Token-embedded auth URL — never logged
@@ -162,7 +163,7 @@ def _initialize_remote_brain_repo(
         else:
             auth_url = repo_url
         subprocess.run(
-            ["git", "remote", "add", "origin", auth_url],
+            [git_bin, "remote", "add", "origin", auth_url],
             cwd=local_path, check=True, capture_output=True, timeout=30,
         )
 
@@ -180,11 +181,11 @@ def _initialize_remote_brain_repo(
             if github_username else "evonexus@users.noreply.github.com"
         )
         subprocess.run(
-            ["git", "config", "user.name", author_name],
+            [git_bin, "config", "user.name", author_name],
             cwd=local_path, check=True, capture_output=True, timeout=10,
         )
         subprocess.run(
-            ["git", "config", "user.email", author_email],
+            [git_bin, "config", "user.email", author_email],
             cwd=local_path, check=True, capture_output=True, timeout=10,
         )
 

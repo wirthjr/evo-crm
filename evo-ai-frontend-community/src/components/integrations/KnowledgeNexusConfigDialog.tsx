@@ -97,7 +97,7 @@ const KnowledgeNexusConfigDialog = ({
     if (!baseUrl || !apiKey) {
       setSpacesError(
         t('edit.integrations.knowledgeNexus.spacesNeedCreds') ||
-          'Enter the base URL and API key first.'
+        'Enter the base URL and API key first.'
       );
       return;
     }
@@ -109,7 +109,7 @@ const KnowledgeNexusConfigDialog = ({
       if (list.length === 0) {
         setSpacesError(
           t('edit.integrations.knowledgeNexus.spacesEmpty') ||
-            'No spaces found for this API key.'
+          'No spaces found for this API key.'
         );
       }
     } catch (error: unknown) {
@@ -117,12 +117,26 @@ const KnowledgeNexusConfigDialog = ({
       setSpaces(null);
       // The backend proxy maps upstream auth/scope/connectivity errors to
       // 401/403/502 — surface the message when available, otherwise a hint.
-      const responseObj = (error as { response?: { data?: { message?: string } } }).response;
-      const apiMsg = responseObj?.data?.message;
+      const responseObj = (
+        error as {
+          response?: {
+            status?: number;
+            data?: {
+              message?: string;
+              error?: { code?: string; message?: string };
+            };
+          };
+        }
+      ).response;
+      const status = responseObj?.status;
+      const apiMsg =
+        responseObj?.data?.message ||
+        responseObj?.data?.error?.message ||
+        responseObj?.data?.error?.code;
       setSpacesError(
-        apiMsg ||
-          t('edit.integrations.knowledgeNexus.spacesError') ||
-          'Could not load spaces. Check the URL and API key, or paste the Space ID manually.'
+        (apiMsg ? (status ? `${status}: ${apiMsg}` : apiMsg) : null) ||
+        t('edit.integrations.knowledgeNexus.spacesError') ||
+        'Could not load spaces. Check the URL and API key, or paste the Space ID manually.'
       );
     } finally {
       setLoadingSpaces(false);
@@ -192,18 +206,6 @@ const KnowledgeNexusConfigDialog = ({
               <Label htmlFor="nexus_base_url">
                 {t('edit.integrations.knowledgeNexus.baseUrl') || 'URL base do Nexus'}
               </Label>
-              {NEXUS_URL && (
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  className="h-7 px-2 gap-1 text-xs"
-                  onClick={() => window.open(NEXUS_URL, '_blank', 'noopener,noreferrer')}
-                >
-                  <ExternalLink className="h-3 w-3" />
-                  {t('edit.integrations.knowledgeNexus.openDashboard') || 'Abrir Nexus'}
-                </Button>
-              )}
             </div>
             <Input
               id="nexus_base_url"
@@ -228,7 +230,7 @@ const KnowledgeNexusConfigDialog = ({
               placeholder={
                 hasSavedApiKey
                   ? t('edit.integrations.knowledgeNexus.apiKeySavedPlaceholder') ||
-                    'Deixe em branco para manter a chave salva'
+                  'Deixe em branco para manter a chave salva'
                   : 'evo_k_...'
               }
               value={config.nexus_api_key}
@@ -328,18 +330,18 @@ const KnowledgeNexusConfigDialog = ({
               >
                 {manualSpaceMode
                   ? t('edit.integrations.knowledgeNexus.useDropdown') ||
-                    'Pick from the list'
+                  'Pick from the list'
                   : t('edit.integrations.knowledgeNexus.useManual') ||
-                    'Paste Space ID manually'}
+                  'Paste Space ID manually'}
               </button>
             )}
             {!spacesError && !loadingSpaces && (
               <p className="text-xs text-muted-foreground">
                 {manualSpaceMode
                   ? t('edit.integrations.knowledgeNexus.spaceIdHint') ||
-                    'UUID of the knowledge space this agent will query.'
+                  'UUID of the knowledge space this agent will query.'
                   : t('edit.integrations.knowledgeNexus.spaceHint') ||
-                    'Spaces are fetched from your Nexus instance once URL + API key are filled.'}
+                  'Spaces are fetched from your Nexus instance once URL + API key are filled.'}
               </p>
             )}
           </div>

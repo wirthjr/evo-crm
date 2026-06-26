@@ -8,7 +8,7 @@
         "deploy:nexus": "node deploy-nexus.js",
         "deploy:vps": "node deploy-image.js",
         "deploy-db": "node deploy-db.js",
-        "deploy:all": "node deploy-db.js && node deploy-image.js",
+        "deploy:all": "node deploy-db.js && node deploy-image.js && node deploy-nexus.js",
         "start": "docker compose up -d",
         "tunnel": "ssh -L 3030:localhost:3030 -L 5173:localhost:5173 -L 5432:localhost:5432 -L 6379:localhost:6379 root@meu-vps.com -N",
         "tunnel:api": "ssh -L 3030:localhost:3030 root@meu-vps.com -N",

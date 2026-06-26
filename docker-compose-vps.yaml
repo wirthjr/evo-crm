@@ -367,6 +367,8 @@ services:
       EVO_CRM_URL: "http://crm-crm:3000"
       EVO_CRM_TOKEN: "${EVO_CRM_TOKEN:-apppass}"
     volumes:
+      - evonexus_claude_auth:/root/.claude
+      - evonexus_dashboard_data:/workspace/dashboard/data
       - evonexus_config:/workspace/config
       - evonexus_workspace:/workspace/workspace
       - evonexus_memory:/workspace/memory
@@ -422,6 +424,8 @@ volumes:
   crm_storage:
   crm_bundle:
   crm_cache:
+  evonexus_claude_auth:
+  evonexus_dashboard_data:
   evonexus_config:
   evonexus_workspace:
   evonexus_memory:

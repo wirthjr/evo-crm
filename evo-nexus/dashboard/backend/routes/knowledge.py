@@ -288,6 +288,7 @@ def configure_connection(connection_id: str):
     _assert_key()
     from knowledge.auto_migrator import configure_connection as _configure
     from knowledge.crypto import decrypt_secret
+    from flask import request
 
     sqlite_conn = _get_sqlite()
     try:
@@ -303,7 +304,9 @@ def configure_connection(connection_id: str):
             return jsonify({"error": "No connection string stored for this connection"}), 400
 
         cs = decrypt_secret(bytes(cs_enc))
-        result = _configure(connection_id, cs, sqlite_conn)
+        data = request.get_json(silent=True) or {}
+        force_init = bool(data.get("force_init"))
+        result = _configure(connection_id, cs, sqlite_conn, force_init=force_init)
 
         if result.get("status") == "ready":
             return jsonify(result)
@@ -312,6 +315,8 @@ def configure_connection(connection_id: str):
         code = result.get("code", "configure_failed")
         if code in ("pgbouncer_blocked", "vector_dim_mismatch"):
             return jsonify(result), 422
+        if code in ("alembic_revision_missing",):
+            return jsonify(result), 409
         return jsonify(result), 500
 
     finally:
@@ -405,19 +410,22 @@ def parser_status():
 def parser_install():
     """Trigger Marker model download (ADR-002).
 
-    Downloads Surya models (~500 MB) to ~/.cache/huggingface/.
-    Creates sentinel ~/.cache/evonexus/marker_installed.ok on completion.
-    Idempotent — returns "already_installed" if sentinel exists.
+    Starts a background daemon thread that downloads Surya models
+    (~500 MB) to ~/.cache/huggingface/ and creates sentinel
+    ~/.cache/evonexus/marker_installed.ok on completion.
+
+    Returns immediately.  Frontend polls GET /api/knowledge/parsers/status
+    to track progress.
+
+    Idempotent — returns "already_installed" if sentinel exists,
+    "already_running" if a download is already in-flight.
     """
     _assert_key()
-    from knowledge.parser_install import download_marker_models
-    from knowledge.parsers.marker_parser import MarkerNotInstalledError
+    from knowledge.parser_install import start_async_install
 
     try:
-        result = download_marker_models()
+        result = start_async_install()
         return jsonify(result)
-    except MarkerNotInstalledError as exc:
-        return jsonify({"error": str(exc)}), 422
     except Exception as exc:
         return jsonify({"error": str(exc)}), 500
 

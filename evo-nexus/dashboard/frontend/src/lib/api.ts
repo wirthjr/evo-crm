@@ -29,6 +29,10 @@ async function buildError(res: Response): Promise<Error> {
       (Array.isArray(data?.details) && data.details.length > 0
         ? data.details.join(' • ')
         : '')
+    const code = data?.code
+    if (code && typeof code === 'string') {
+      detail = detail ? `${code}: ${detail}` : code
+    }
   } catch {
     try {
       const text = await res.text()

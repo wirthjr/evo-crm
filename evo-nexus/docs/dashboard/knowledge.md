@@ -137,7 +137,8 @@ Two modes — clear separation:
 - **`DASHBOARD_API_TOKEN`** (existing, in `.env`) → internal use by skills, heartbeats, routines. **Bypasses rate limit.**
 - **`knowledge_api_keys`** → external use (Academy app, webhooks, third-party). Scoped by `connection_id` + `space_ids`. Rate-limited (fixed window).
 
-Create API keys via UI (`/knowledge/api-keys`) or via the REST API.
+Create API keys via UI from a specific connection (`/knowledge/connections/:id/api-keys`).
+The shortcut route `/knowledge/api-keys` redirects to the active connection when one is selected.
 
 ### Example (external — Evo Academy calling Knowledge)
 

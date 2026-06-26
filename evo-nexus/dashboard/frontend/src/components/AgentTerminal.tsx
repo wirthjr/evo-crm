@@ -326,8 +326,45 @@ export default function AgentTerminal({ agent, sessionId: externalSessionId, wor
 
     run()
 
+    // Handle back-forward cache (bfcache) — re-establish the WebSocket
+    // when the page is restored from bfcache, and close it cleanly before
+    // the page enters bfcache to avoid "WebSocket connection failed: Page
+    // entered Back-Forward Cache" errors in the console.
+    const handlePageshow = (e: PageTransitionEvent) => {
+      if (e.persisted) {
+        if (wsRef.current) {
+          wsRef.current.onclose = null
+          wsRef.current.onerror = null
+          try { wsRef.current.close() } catch {}
+          wsRef.current = null
+        }
+        if (pingRef.current) {
+          clearInterval(pingRef.current)
+          pingRef.current = null
+        }
+        cancelled = false
+        run()
+      }
+    }
+    const handlePagehide = () => {
+      if (wsRef.current) {
+        wsRef.current.onclose = null
+        wsRef.current.onerror = null
+        wsRef.current.close()
+        wsRef.current = null
+      }
+      if (pingRef.current) {
+        clearInterval(pingRef.current)
+        pingRef.current = null
+      }
+    }
+    window.addEventListener('pageshow', handlePageshow)
+    window.addEventListener('pagehide', handlePagehide)
+
     return () => {
       cancelled = true
+      window.removeEventListener('pageshow', handlePageshow)
+      window.removeEventListener('pagehide', handlePagehide)
       if (pingRef.current) {
         clearInterval(pingRef.current)
         pingRef.current = null

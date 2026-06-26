@@ -1,6 +1,7 @@
 """Brain Repo — Git operations wrapper via subprocess."""
 
 import logging
+import shutil
 import subprocess
 from pathlib import Path
 
@@ -16,8 +17,26 @@ def _masked_url(url: str, token: str) -> str:
     return url.replace(token, "***")
 
 
+def get_git_executable() -> str:
+    """Return the git binary path or raise a user-facing error.
+
+    Brain Repo relies on the system ``git`` binary being available inside the
+    dashboard runtime/container. When it's missing, surfacing a clear message
+    is much more useful than letting subprocess bubble up ``Errno 2``.
+    """
+    git_path = shutil.which("git")
+    if git_path:
+        return git_path
+    raise RuntimeError(
+        "git executable not found in PATH. Install git in the dashboard "
+        "runtime/container and restart the service."
+    )
+
+
 def _run(cmd: list[str], cwd: Path | None = None, timeout: int = DEFAULT_TIMEOUT) -> subprocess.CompletedProcess:
     """Run a git subprocess, capturing stdout/stderr, with a timeout."""
+    if cmd and cmd[0] == "git":
+        cmd = [get_git_executable(), *cmd[1:]]
     return subprocess.run(
         cmd,
         cwd=cwd,
@@ -185,7 +204,8 @@ def checkout_ref(repo_dir: Path, ref: str, target_dir: Path) -> None:
     """
     target_dir.mkdir(parents=True, exist_ok=True)
 
-    archive_cmd = ["git", "archive", "--format=tar", ref]
+    git_bin = get_git_executable()
+    archive_cmd = [git_bin, "archive", "--format=tar", ref]
     tar_cmd = ["tar", "-x", "-C", str(target_dir)]
 
     archive_proc = subprocess.Popen(

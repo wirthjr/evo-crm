@@ -129,7 +129,13 @@ export default function Scheduler() {
         fetchData()
         setActionLoading(null)
       }, 2000)
-    } catch {
+    } catch (e: unknown) {
+      const serviceName = services.find(s => s.id === serviceId)?.name || serviceId
+      const actionLabel = action === 'start' ? 'iniciar' : 'parar'
+      toast.error(
+        `Falha ao ${actionLabel} ${serviceName}`,
+        e instanceof Error ? e.message : undefined,
+      )
       setActionLoading(null)
     }
   }

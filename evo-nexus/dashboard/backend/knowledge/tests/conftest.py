@@ -68,7 +68,7 @@ _TEARDOWN_TABLES = [
     "knowledge_api_usage",
     "knowledge_api_keys",
     "knowledge_config",
-    "alembic_version",
+    "knowledge_alembic_version",
 ]
 
 

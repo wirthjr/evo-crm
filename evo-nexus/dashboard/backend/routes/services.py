@@ -1,10 +1,67 @@
 """Services endpoint — check running background services."""
 
+import json
+import logging
+import os
+import shutil
 import subprocess
+import time
+import traceback
+import urllib.request
 from flask import Blueprint, jsonify
 from routes._helpers import WORKSPACE
 
+log = logging.getLogger(__name__)
+
 bp = Blueprint("services", __name__)
+
+DEBUG_ENV_PATH = WORKSPACE / ".dbg" / "telegram-start.env"
+
+
+def _build_env() -> dict[str, str]:
+    env = os.environ.copy()
+    env.setdefault("PATH", "/usr/local/bin:/usr/bin:/bin:" + os.path.expanduser("~/.local/bin"))
+    return env
+
+
+def _debug_event(
+    hypothesis_id: str,
+    location: str,
+    msg: str,
+    data: dict | None = None,
+    *,
+    trace_id: str | None = None,
+    run_id: str = "pre-fix",
+) -> None:
+    # #region debug-point A:report
+    try:
+        debug_url = "http://127.0.0.1:7777/event"
+        session_id = "telegram-start"
+        if DEBUG_ENV_PATH.exists():
+            for line in DEBUG_ENV_PATH.read_text(encoding="utf-8").splitlines():
+                if line.startswith("DEBUG_SERVER_URL="):
+                    debug_url = line.split("=", 1)[1].strip() or debug_url
+                elif line.startswith("DEBUG_SESSION_ID="):
+                    session_id = line.split("=", 1)[1].strip() or session_id
+        payload = {
+            "sessionId": session_id,
+            "runId": run_id,
+            "hypothesisId": hypothesis_id,
+            "location": location,
+            "msg": msg,
+            "data": data or {},
+            "traceId": trace_id,
+            "ts": round(time.time() * 1000),
+        }
+        req = urllib.request.Request(
+            debug_url,
+            data=json.dumps(payload).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+        )
+        urllib.request.urlopen(req, timeout=1).read()
+    except Exception:
+        pass
+    # #endregion
 
 
 def _check_process(cmd_args: list[str], pipe_grep: str | None = None) -> dict:
@@ -13,7 +70,7 @@ def _check_process(cmd_args: list[str], pipe_grep: str | None = None) -> dict:
     If pipe_grep is provided, runs cmd_args and filters output for the pattern.
     """
     try:
-        result = subprocess.run(cmd_args, capture_output=True, text=True, timeout=5)
+        result = subprocess.run(cmd_args, capture_output=True, text=True, timeout=5, env=_build_env())
         output = result.stdout.strip()
         if pipe_grep and output:
             output = "\n".join(l for l in output.splitlines() if pipe_grep in l)
@@ -114,7 +171,13 @@ def run_routine(routine_id):
     python_bin = shutil.which("uv")
     cmd_args = ["uv", "run", "python", str(script_path)] if python_bin else ["python3", str(script_path)]
     try:
-        subprocess.Popen(cmd_args, cwd=WORKSPACE_STR, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        subprocess.Popen(
+            cmd_args,
+            cwd=WORKSPACE_STR,
+            env=_build_env(),
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
         return jsonify({"status": "started", "routine": routine_id, "script": script})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -150,6 +213,7 @@ def restart_all_services():
         ["bash", "-c", cmd],
         start_new_session=True,
         cwd=workspace,
+        env=_build_env(),
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
     )
@@ -179,15 +243,69 @@ def start_service(service_id):
     cmd_args = START_CMDS.get(service_id)
     if not cmd_args:
         return jsonify({"error": f"Unknown service: {service_id}"}), 400
+    trace_id = f"{service_id}-{round(time.time() * 1000)}"
+    env = _build_env()
     try:
+        if service_id == "telegram":
+            # #region debug-point A:start-request
+            _debug_event(
+                "A",
+                "routes/services.py:start_service:before-popen",
+                "[DEBUG] Telegram start requested from dashboard",
+                {
+                    "service_id": service_id,
+                    "cmd_args": cmd_args,
+                    "cwd": WORKSPACE_STR,
+                    "screen_path": shutil.which("screen"),
+                    "claude_path": shutil.which("claude"),
+                    "bot_token_present": bool(env.get("TELEGRAM_BOT_TOKEN")),
+                    "chat_id_present": bool(env.get("TELEGRAM_CHAT_ID")),
+                },
+                trace_id=trace_id,
+            )
+            # #endregion
         if service_id == "scheduler":
             log_file = open(SCHEDULER_LOG, "a")
-            subprocess.Popen(cmd_args, cwd=WORKSPACE_STR, stdout=log_file, stderr=log_file)
+            subprocess.Popen(cmd_args, cwd=WORKSPACE_STR, env=env, stdout=log_file, stderr=log_file)
         else:
-            subprocess.Popen(cmd_args, cwd=WORKSPACE_STR)
+            proc = subprocess.Popen(cmd_args, cwd=WORKSPACE_STR, env=env)
+            if service_id == "telegram":
+                # #region debug-point C:post-spawn
+                time.sleep(1)
+                screen_state = _check_process(["screen", "-list"], pipe_grep="telegram")
+                _debug_event(
+                    "C",
+                    "routes/services.py:start_service:after-popen",
+                    "[DEBUG] Telegram start command dispatched",
+                    {
+                        "pid": proc.pid,
+                        "returncode_after_1s": proc.poll(),
+                        "screen_running": screen_state["running"],
+                        "screen_detail": screen_state["detail"],
+                        "path_head": (env.get("PATH", "")[:400]),
+                    },
+                    trace_id=trace_id,
+                )
+                # #endregion
         return jsonify({"status": "started", "id": service_id})
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        if service_id == "telegram":
+            # #region debug-point B:start-error
+            _debug_event(
+                "B",
+                "routes/services.py:start_service:exception",
+                "[DEBUG] Telegram start failed before screen session stabilized",
+                {
+                    "error": str(e),
+                    "exception_type": type(e).__name__,
+                    "screen_path": shutil.which("screen"),
+                    "claude_path": shutil.which("claude"),
+                },
+                trace_id=trace_id,
+            )
+            # #endregion
+        log.error("Failed to start service %s: %s\n%s", service_id, e, traceback.format_exc())
+        return jsonify({"error": str(e), "detail": traceback.format_exc()}), 500
 
 
 @bp.route("/api/services/<service_id>/logs")
@@ -285,7 +403,8 @@ def stop_service(service_id):
     if not cmd_args:
         return jsonify({"error": f"Unknown service: {service_id}"}), 400
     try:
-        subprocess.run(cmd_args, timeout=5, stderr=subprocess.DEVNULL)
+        subprocess.run(cmd_args, timeout=5, env=_build_env(), stderr=subprocess.DEVNULL)
         return jsonify({"status": "stopped", "id": service_id})
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        log.error("Failed to stop service %s: %s\n%s", service_id, e, traceback.format_exc())
+        return jsonify({"error": str(e), "detail": traceback.format_exc()}), 500

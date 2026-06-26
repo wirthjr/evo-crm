@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback } from 'react'
+import { Navigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { Plus, Copy, Trash2, RefreshCw, X, Key, CheckCircle, AlertTriangle } from 'lucide-react'
 import { api } from '../../lib/api'
@@ -38,6 +39,31 @@ const defaultForm: NewKeyForm = {
   expires_at: '',
 }
 
+export function KnowledgeApiKeysRedirect() {
+  const { activeConnectionId, connections, loading } = useKnowledge()
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-16 text-[#667085] text-sm">
+        Loading API keys...
+      </div>
+    )
+  }
+
+  const fallbackConnectionId =
+    activeConnectionId ?? connections.find((connection) => connection.status === 'ready')?.id ?? connections[0]?.id
+
+  if (fallbackConnectionId) {
+    return <Navigate to={`/knowledge/connections/${fallbackConnectionId}/api-keys`} replace />
+  }
+
+  return (
+    <div className="text-center py-12 bg-[#182230] border border-[#344054] rounded-xl text-[#667085] text-sm">
+      Create a Knowledge connection first to manage API keys.
+    </div>
+  )
+}
+
 export default function KnowledgeApiKeys() {
   const { t } = useTranslation()
   const { hasPermission } = useAuth()
@@ -53,6 +79,7 @@ export default function KnowledgeApiKeys() {
   const [createdToken, setCreatedToken] = useState<string | null>(null)
   const [copied, setCopied] = useState(false)
   const [confirmRevokeId, setConfirmRevokeId] = useState<string | null>(null)
+  const [revoking, setRevoking] = useState(false)
 
   const load = useCallback(async () => {
     if (!activeConnectionId) { setLoading(false); return }
@@ -107,12 +134,15 @@ export default function KnowledgeApiKeys() {
   }
 
   async function handleRevoke(id: string) {
+    setRevoking(true)
     try {
       await api.delete(`/knowledge/connections/${activeConnectionId}/api-keys/${id}`)
       setConfirmRevokeId(null)
       await load()
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Revoke failed')
+    } finally {
+      setRevoking(false)
     }
   }
 
@@ -335,8 +365,8 @@ export default function KnowledgeApiKeys() {
             <p className="text-sm font-semibold text-[#F9FAFB] mb-1">Revoke API Key?</p>
             <p className="text-xs text-[#667085] mb-6">Any application using this key will immediately lose access. This cannot be undone.</p>
             <div className="flex gap-3">
-              <button onClick={() => setConfirmRevokeId(null)} className="flex-1 px-4 py-2 bg-white/5 text-[#D0D5DD] rounded-lg text-sm hover:bg-white/10 transition-colors">Cancel</button>
-              <button onClick={() => handleRevoke(confirmRevokeId)} className="flex-1 px-4 py-2 bg-red-500 text-white rounded-lg text-sm font-semibold hover:bg-red-600 transition-colors">Revoke</button>
+              <button onClick={() => setConfirmRevokeId(null)} disabled={revoking} className="flex-1 px-4 py-2 bg-white/5 text-[#D0D5DD] rounded-lg text-sm hover:bg-white/10 transition-colors disabled:opacity-50">Cancel</button>
+              <button onClick={() => handleRevoke(confirmRevokeId)} disabled={revoking} className="flex-1 px-4 py-2 bg-red-500 text-white rounded-lg text-sm font-semibold hover:bg-red-600 transition-colors disabled:opacity-50">{revoking ? 'Revoking...' : 'Revoke'}</button>
             </div>
           </div>
         </div>

@@ -20,6 +20,10 @@ interface ParserStatus {
   marker_installed: boolean
   marker_version?: string
   install_path?: string
+  install_running: boolean
+  install_stage: string
+  install_progress: number
+  install_error: string | null
 }
 
 interface EmbedderModel {
@@ -196,18 +200,39 @@ export default function KnowledgeSettings() {
     setInstalling(true)
     setError(null)
     try {
-      const result = await api.post('/knowledge/parsers/install')
-      if (result.already_installed) {
-        setInstallDone(true)
-      } else {
-        setInstallDone(true)
-        await load()
-      }
+      await api.post('/knowledge/parsers/install')
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Install failed')
+      setInstalling(false)
     }
-    setInstalling(false)
   }
+
+  // Poll install status while running
+  useEffect(() => {
+    if (!installing) return
+    const poll = async () => {
+      try {
+        const status: ParserStatus = await api.get('/knowledge/parsers/status')
+        setParserStatus(status)
+        if (status.marker_installed) {
+          setInstalling(false)
+          setInstallDone(true)
+          await load()
+          return
+        }
+        if (status.install_error) {
+          setError(status.install_error)
+          setInstalling(false)
+          return
+        }
+      } catch {
+        // network hiccup, keep polling
+      }
+    }
+    poll()
+    const interval = setInterval(poll, 2000)
+    return () => clearInterval(interval)
+  }, [installing, load])
 
   if (loading) {
     return (
@@ -494,9 +519,20 @@ export default function KnowledgeSettings() {
           {installing && (
             <div className="mt-3">
               <div className="h-1.5 bg-[#0C111D] rounded-full overflow-hidden">
-                <div className="h-full bg-[#00FFA7] animate-pulse w-2/3" />
+                <div
+                  className="h-full bg-[#00FFA7] transition-all duration-500"
+                  style={{ width: `${Math.max(5, (parserStatus?.install_progress || 0) * 100)}%` }}
+                />
               </div>
-              <p className="text-xs text-[#667085] mt-1">Downloading Surya models (~500 MB)...</p>
+              <p className="text-xs text-[#667085] mt-1">
+                {parserStatus?.install_stage === 'downloading_models'
+                  ? 'Downloading Surya models (~500 MB)...'
+                  : parserStatus?.install_stage === 'importing_marker'
+                  ? 'Initializing Marker...'
+                  : parserStatus?.install_stage === 'finalizing'
+                  ? 'Finalizing...'
+                  : 'Downloading Surya models (~500 MB)...'}
+              </p>
             </div>
           )}
         </div>

@@ -51,6 +51,8 @@ services:
       - evonexus_memory:/workspace/memory
       - evonexus_adw_logs:/workspace/ADWs/logs
       - evonexus_agent_memory:/workspace/.claude/agent-memory
+      - evonexus_hf_cache:/root/.cache/huggingface
+      - evonexus_evonexus_cache:/root/.cache/evonexus
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://localhost:8080/api/version"]
@@ -112,3 +114,5 @@ volumes:
   evonexus_memory:
   evonexus_adw_logs:
   evonexus_agent_memory:
+  evonexus_hf_cache:
+  evonexus_evonexus_cache:

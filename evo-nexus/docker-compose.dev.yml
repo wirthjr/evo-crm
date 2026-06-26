@@ -42,6 +42,8 @@ services:
       - evonexus-dev-memory:/workspace/memory
       - evonexus-dev-workspace:/workspace/workspace
       - evonexus-dev-claude:/root/.claude
+      - evonexus-dev-hf-cache:/root/.cache/huggingface
+      - evonexus-dev-evonexus-cache:/root/.cache/evonexus
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8080/api/version"]
@@ -56,3 +58,5 @@ volumes:
   evonexus-dev-memory:
   evonexus-dev-workspace:
   evonexus-dev-claude:
+  evonexus-dev-hf-cache:
+  evonexus-dev-evonexus-cache:

@@ -101,22 +101,46 @@ def detect_brain_repos(token: str) -> list[dict]:
 
 
 def list_user_repos(token: str) -> list[dict]:
-    """List up to 100 private repos for the authenticated user."""
-    url = f"{_API_BASE}/user/repos?per_page=100&type=private"
-    status, body, _ = _get(url, token)
-    if status != 200 or not isinstance(body, list):
-        log.warning("list_user_repos: status %d", status)
-        return []
-    return [
-        {
-            "name": r.get("name", ""),
-            "full_name": r.get("full_name", ""),
-            "html_url": r.get("html_url", ""),
-            "private": r.get("private", False),
-            "description": r.get("description", ""),
-        }
-        for r in body
-    ]
+    """List private repos visible to the authenticated user.
+
+    GitHub paginates ``/user/repos`` at 100 items per page. The previous
+    implementation fetched only the first page, so accounts with more than
+    100 accessible private repos could miss the actual brain repo entirely.
+    """
+    results: list[dict] = []
+    seen_full_names: set[str] = set()
+
+    for page in range(1, 11):
+        url = (
+            f"{_API_BASE}/user/repos?per_page=100&page={page}"
+            "&visibility=private&affiliation=owner,collaborator,organization_member"
+        )
+        status, body, _ = _get(url, token)
+        if status != 200 or not isinstance(body, list):
+            log.warning("list_user_repos: status %d on page %d", status, page)
+            break
+        if not body:
+            break
+
+        for r in body:
+            full_name = r.get("full_name", "")
+            if not full_name or full_name in seen_full_names:
+                continue
+            seen_full_names.add(full_name)
+            results.append(
+                {
+                    "name": r.get("name", ""),
+                    "full_name": full_name,
+                    "html_url": r.get("html_url", ""),
+                    "private": r.get("private", False),
+                    "description": r.get("description", ""),
+                }
+            )
+
+        if len(body) < 100:
+            break
+
+    return results
 
 
 def create_private_repo(token: str, name: str, description: str = "") -> dict:

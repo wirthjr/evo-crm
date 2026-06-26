@@ -57,6 +57,7 @@ const KnowledgeUpload = lazyDefault(() => import('./pages/Knowledge/Upload'))
 const KnowledgeBrowse = lazyDefault(() => import('./pages/Knowledge/Browse'))
 const KnowledgeSearch = lazyDefault(() => import('./pages/Knowledge/Search'))
 const KnowledgeApiKeys = lazyDefault(() => import('./pages/Knowledge/ApiKeys'))
+const KnowledgeApiKeysRedirect = lazyNamed(() => import('./pages/Knowledge/ApiKeys'), 'KnowledgeApiKeysRedirect')
 
 function FullPageRoute({
   locationKey,
@@ -280,6 +281,7 @@ function AppContent() {
                   <Route path="/knowledge" element={<KnowledgeLayout />}>
                     <Route index element={<KnowledgeConnections />} />
                     <Route path="settings" element={<KnowledgeSettings />} />
+                    <Route path="api-keys" element={<KnowledgeApiKeysRedirect />} />
                   </Route>
                   {/* Per-connection scope: tabs appear only inside a connection */}
                   <Route path="/knowledge/connections/:id" element={<ConnectionLayout />}>

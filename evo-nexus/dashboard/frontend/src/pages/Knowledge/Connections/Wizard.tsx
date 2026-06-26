@@ -57,6 +57,8 @@ export default function Wizard({ onClose, onCreated }: Props) {
   const [configuring, setConfiguring] = useState(false)
   const [configError, setConfigError] = useState<string | null>(null)
   const [createdId, setCreatedId] = useState<string | null>(null)
+  const [forceInitOpen, setForceInitOpen] = useState(false)
+  const [forceInitLoading, setForceInitLoading] = useState(false)
 
   function set(key: keyof FormData, value: string | boolean) {
     setForm((prev) => ({ ...prev, [key]: value }))
@@ -160,9 +162,53 @@ export default function Wizard({ onClose, onCreated }: Props) {
       phasesCopy[3] = { ...phasesCopy[3], status: 'error' }
       setPhases([...phasesCopy])
       setConfigError(`Configuration failed: ${msg}`)
+      if (String(msg).includes('alembic_revision_missing') || String(msg).includes("Can't locate revision identified by")) {
+        setForceInitOpen(true)
+      }
     }
 
     setConfiguring(false)
+  }
+
+  async function handleForceInit() {
+    if (!createdId) return
+    setForceInitLoading(true)
+    setConfiguring(true)
+    setConfigError(null)
+    const phasesCopy = defaultPhases.map((p) => ({ ...p }))
+    phasesCopy[0] = { ...phasesCopy[0], status: 'done' }
+    phasesCopy[1] = { ...phasesCopy[1], status: 'running' }
+    phasesCopy[2] = { ...phasesCopy[2], status: 'running' }
+    phasesCopy[3] = { ...phasesCopy[3], status: 'running' }
+    setPhases([...phasesCopy])
+    try {
+      const result = await api.post(`/knowledge/connections/${createdId}/configure`, { force_init: true })
+      if (result.status === 'ready') {
+        phasesCopy[1] = { ...phasesCopy[1], status: 'done' }
+        phasesCopy[2] = { ...phasesCopy[2], status: 'done' }
+        phasesCopy[3] = { ...phasesCopy[3], status: 'done' }
+        setPhases([...phasesCopy])
+        await refreshConnections()
+        setForceInitOpen(false)
+        setStep(3)
+      } else {
+        const errMsg = result.message || result.error || 'Configuration failed'
+        phasesCopy[1] = { ...phasesCopy[1], status: 'error', error: errMsg }
+        phasesCopy[2] = { ...phasesCopy[2], status: 'error' }
+        phasesCopy[3] = { ...phasesCopy[3], status: 'error' }
+        setPhases([...phasesCopy])
+        setConfigError(errMsg)
+      }
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : 'Configuration failed'
+      phasesCopy[1] = { ...phasesCopy[1], status: 'error', error: msg }
+      phasesCopy[2] = { ...phasesCopy[2], status: 'error' }
+      phasesCopy[3] = { ...phasesCopy[3], status: 'error' }
+      setPhases([...phasesCopy])
+      setConfigError(`Configuration failed: ${msg}`)
+    }
+    setConfiguring(false)
+    setForceInitLoading(false)
   }
 
   return (
@@ -183,11 +229,10 @@ export default function Wizard({ onClose, onCreated }: Props) {
         <div className="flex items-center gap-2 px-6 py-3 border-b border-[#344054]">
           {[1, 2, 3].map((s) => (
             <div key={s} className="flex items-center gap-2">
-              <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-medium ${
-                step === s ? 'bg-[#00FFA7] text-[#0C111D]' :
-                step > s ? 'bg-[#00FFA7]/20 text-[#00FFA7]' :
-                'bg-white/5 text-[#667085]'
-              }`}>{s}</div>
+              <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-medium ${step === s ? 'bg-[#00FFA7] text-[#0C111D]' :
+                  step > s ? 'bg-[#00FFA7]/20 text-[#00FFA7]' :
+                    'bg-white/5 text-[#667085]'
+                }`}>{s}</div>
               {s < 3 && <div className={`h-px w-8 ${step > s ? 'bg-[#00FFA7]/40' : 'bg-[#344054]'}`} />}
             </div>
           ))}
@@ -417,6 +462,46 @@ export default function Wizard({ onClose, onCreated }: Props) {
           )}
         </div>
       </div>
+
+      {forceInitOpen && (
+        <div className="fixed inset-0 bg-black/70 z-[60] flex items-center justify-center p-4">
+          <div className="bg-[#0C111D] border border-[#344054] rounded-xl w-full max-w-md shadow-2xl">
+            <div className="px-6 py-4 border-b border-[#344054] flex items-center justify-between">
+              <h3 className="text-sm font-semibold text-[#F9FAFB]">Autorizar criação de tabelas</h3>
+              <button
+                onClick={() => setForceInitOpen(false)}
+                className="p-1.5 rounded-lg text-[#667085] hover:text-[#D0D5DD] hover:bg-white/5 transition-colors"
+              >
+                <X size={16} />
+              </button>
+            </div>
+            <div className="px-6 py-5 space-y-3">
+              <p className="text-sm text-[#D0D5DD]">
+                Este banco já possui um histórico de migrations incompatível. O EvoNexus pode criar/recriar as tabelas do Knowledge e executar as migrations automaticamente.
+              </p>
+              <p className="text-xs text-[#667085]">
+                Isso cria as tabelas <span className="font-mono">knowledge_*</span> e usa <span className="font-mono">knowledge_alembic_version</span>. Se já existirem tabelas do Knowledge, os dados serão removidos. Não altera tabelas do CRM.
+              </p>
+              <div className="flex items-center justify-end gap-2 pt-2">
+                <button
+                  onClick={() => setForceInitOpen(false)}
+                  disabled={forceInitLoading}
+                  className="px-3 py-2 rounded-lg text-xs font-medium bg-white/5 text-[#D0D5DD] hover:bg-white/10 transition-colors disabled:opacity-50"
+                >
+                  Cancelar
+                </button>
+                <button
+                  onClick={handleForceInit}
+                  disabled={forceInitLoading}
+                  className="px-3 py-2 rounded-lg text-xs font-medium bg-[#00FFA7] text-[#0C111D] hover:bg-[#00FFA7]/90 transition-colors disabled:opacity-50"
+                >
+                  {forceInitLoading ? 'Criando…' : 'Criar tabelas e migrar'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

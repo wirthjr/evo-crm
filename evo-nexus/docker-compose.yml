@@ -24,6 +24,8 @@ services:
       - ./.claude/templates:/workspace/.claude/templates:ro
       - ./memory:/workspace/memory:ro
       - ./ADWs/logs:/workspace/ADWs/logs
+      - evonexus_hf_cache:/root/.cache/huggingface
+      - evonexus_evonexus_cache:/root/.cache/evonexus
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8080/api/version"]
@@ -31,6 +33,8 @@ services:
       timeout: 10s
       retries: 3
       start_period: 15s
+    networks:
+      - crm-net
 
   # Telegram — bot that listens for messages
   telegram:
@@ -92,3 +96,10 @@ volumes:
   memory:
   adw-logs:
   agent-memory:
+  evonexus_hf_cache:
+  evonexus_evonexus_cache:
+
+networks:
+  crm-net:
+    external: true
+    name: crm_crm-net

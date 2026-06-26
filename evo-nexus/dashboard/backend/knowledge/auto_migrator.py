@@ -141,6 +141,7 @@ def configure_connection(
     connection_id: str,
     connection_string: str,
     sqlite_conn,
+    force_init: bool = False,
 ) -> Dict[str, Any]:
     """Run the full configure pipeline.
 
@@ -274,33 +275,42 @@ def configure_connection(
                 ).fetchone()
                 if row and row[0] != evonexus_dim:
                     remote_dim = row[0]
-                    err = {
-                        "error": "vector_dim_mismatch",
-                        "remote_dim": remote_dim,
-                        "evonexus_dim": evonexus_dim,
-                        "message": (
-                            f"Remote Postgres was already initialized with vector_dim={remote_dim}. "
-                            f"EvoNexus is configured with vector_dim={evonexus_dim}. "
-                            "Options: (i) use an empty database, or "
-                            "(ii) manually execute `DROP TABLE knowledge_config CASCADE` "
-                            "on the remote Postgres and click 'Connect & Configure' again. "
-                            "EvoNexus does not modify a non-empty knowledge_config."
-                        ),
-                        "code": "vector_dim_mismatch",
-                    }
-                    _update_connection_status(
-                        sqlite_conn, connection_id, "error",
-                        err["message"],
-                        {
-                            "pgvector_version": pgvector_version,
-                            "postgres_version": pg_version_str[:100],
-                        },
-                    )
+                    if not force_init:
+                        err = {
+                            "error": "vector_dim_mismatch",
+                            "remote_dim": remote_dim,
+                            "evonexus_dim": evonexus_dim,
+                            "message": (
+                                f"Remote Postgres was already initialized with vector_dim={remote_dim}. "
+                                f"EvoNexus is configured with vector_dim={evonexus_dim}. "
+                                "Options: (i) use an empty database, or "
+                                "(ii) manually execute `DROP TABLE knowledge_config CASCADE` "
+                                "on the remote Postgres and click 'Connect & Configure' again. "
+                                "EvoNexus does not modify a non-empty knowledge_config."
+                            ),
+                            "code": "vector_dim_mismatch",
+                        }
+                        _update_connection_status(
+                            sqlite_conn, connection_id, "error",
+                            err["message"],
+                            {
+                                "pgvector_version": pgvector_version,
+                                "postgres_version": pg_version_str[:100],
+                            },
+                        )
+                        _record_event(
+                            sqlite_conn, connection_id, "vector_dim_mismatch",
+                            {"remote_dim": remote_dim, "evonexus_dim": evonexus_dim},
+                        )
+                        return {"status": "error", **err}
                     _record_event(
-                        sqlite_conn, connection_id, "vector_dim_mismatch",
+                        sqlite_conn, connection_id, "vector_dim_mismatch_overridden",
                         {"remote_dim": remote_dim, "evonexus_dim": evonexus_dim},
                     )
-                    return {"status": "error", **err}
+
+        if force_init:
+            _reset_knowledge_schema(connection_id, connection_string)
+            _record_event(sqlite_conn, connection_id, "force_init", {})
 
         # Step 6: run Alembic upgrade head
         _run_alembic_upgrade(connection_string)
@@ -321,9 +331,41 @@ def configure_connection(
 
     except Exception as exc:
         error_msg = str(exc)
+        code = "configure_failed"
+        revision = None
+        if "Can't locate revision identified by" in error_msg:
+            code = "alembic_revision_missing"
+            import re
+            m = re.search(r"identified by '([^']+)'", error_msg)
+            revision = m.group(1) if m else None
         _update_connection_status(sqlite_conn, connection_id, "error", error_msg)
-        _record_event(sqlite_conn, connection_id, "configure_error", {"error": error_msg})
-        return {"status": "error", "error": error_msg, "code": "configure_failed"}
+        payload: Dict[str, Any] = {"error": error_msg, "code": code}
+        if revision:
+            payload["revision"] = revision
+        if force_init:
+            payload["force_init"] = True
+        _record_event(sqlite_conn, connection_id, "configure_error", payload)
+        return {"status": "error", **payload}
+
+
+def _reset_knowledge_schema(connection_id: str, connection_string: str) -> None:
+    engine = get_engine(connection_id, connection_string)
+    tables = [
+        "knowledge_classify_queue",
+        "knowledge_api_usage",
+        "knowledge_api_keys",
+        "knowledge_chunks",
+        "knowledge_documents",
+        "knowledge_units",
+        "knowledge_spaces",
+        "knowledge_config",
+        "knowledge_alembic_version",
+    ]
+    with engine.connect() as conn:
+        conn.execute(text("SELECT 1"))
+        for table in tables:
+            conn.execute(text(f"DROP TABLE IF EXISTS {table} CASCADE"))
+        conn.commit()
 
 
 _OPENAI_MODEL_DIMS = {
@@ -372,12 +414,12 @@ def check_drift(connection_id: str, connection_string: str, sqlite_conn) -> Dict
 
         with engine.connect() as conn:
             row = conn.execute(
-                text("SELECT version_num FROM alembic_version LIMIT 1")
+                text("SELECT version_num FROM knowledge_alembic_version LIMIT 1")
             ).fetchone()
             remote_rev = row[0] if row else None
 
         if remote_rev is None:
-            # alembic_version table not present → needs full migration
+            # version table not present → needs full migration
             _update_connection_status(sqlite_conn, connection_id, "needs_migration")
             _record_event(
                 sqlite_conn, connection_id, "drift_detected",

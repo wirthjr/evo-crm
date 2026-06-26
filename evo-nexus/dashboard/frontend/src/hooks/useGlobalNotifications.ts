@@ -196,9 +196,37 @@ export function useGlobalNotifications() {
     }
     document.addEventListener('visibilitychange', onVisibility)
 
+    // Handle back-forward cache (bfcache) — reconnect on restore and
+    // close cleanly before the page enters bfcache to avoid
+    // "WebSocket connection failed: Page entered Back-Forward Cache"
+    const onPageshow = (e: PageTransitionEvent) => {
+      if (e.persisted && mountedRef.current) {
+        if (!wsRef.current || wsRef.current.readyState > 1) {
+          reconnectDelayRef.current = 1000
+          connect()
+        }
+      }
+    }
+    const onPagehide = () => {
+      if (wsRef.current) {
+        wsRef.current.onclose = null
+        wsRef.current.onerror = null
+        wsRef.current.close()
+        wsRef.current = null
+      }
+      if (reconnectTimerRef.current) {
+        clearTimeout(reconnectTimerRef.current)
+        reconnectTimerRef.current = null
+      }
+    }
+    window.addEventListener('pageshow', onPageshow)
+    window.addEventListener('pagehide', onPagehide)
+
     return () => {
       mountedRef.current = false
       document.removeEventListener('visibilitychange', onVisibility)
+      window.removeEventListener('pageshow', onPageshow)
+      window.removeEventListener('pagehide', onPagehide)
       if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current)
       if (wsRef.current) {
         wsRef.current.onclose = null

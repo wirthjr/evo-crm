@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
-import { ArrowLeft, RefreshCw, Trash2, CheckCircle, XCircle, AlertTriangle, Wifi } from 'lucide-react'
+import { ArrowLeft, RefreshCw, Trash2, CheckCircle, XCircle, AlertTriangle, Wifi, X } from 'lucide-react'
 import { api } from '../../../lib/api'
 import { useAuth } from '../../../context/AuthContext'
 import { useKnowledge } from '../../../context/KnowledgeContext'
@@ -43,6 +43,8 @@ export default function ConnectionDetail() {
   const [actionLoading, setActionLoading] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [confirmDelete, setConfirmDelete] = useState(false)
+  const [forceInitOpen, setForceInitOpen] = useState(false)
+  const [forceInitLoading, setForceInitLoading] = useState(false)
   const canManage = hasPermission('knowledge', 'manage')
 
   const load = useCallback(async () => {
@@ -94,9 +96,28 @@ export default function ConnectionDetail() {
       await load()
       await refreshConnections()
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Reconnect failed')
+      const msg = e instanceof Error ? e.message : 'Reconnect failed'
+      setError(msg)
+      if (String(msg).includes('alembic_revision_missing') || String(msg).includes("Can't locate revision identified by")) {
+        setForceInitOpen(true)
+      }
     }
     setActionLoading(null)
+  }
+
+  const handleForceInit = async () => {
+    if (!id) return
+    setForceInitLoading(true)
+    setError(null)
+    try {
+      await api.post(`/knowledge/connections/${id}/configure`, { force_init: true })
+      await load()
+      await refreshConnections()
+      setForceInitOpen(false)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Reconnect failed')
+    }
+    setForceInitLoading(false)
   }
 
   const handleDelete = async () => {
@@ -280,6 +301,46 @@ export default function ConnectionDetail() {
               </button>
             </div>
           )}
+        </div>
+      )}
+
+      {forceInitOpen && (
+        <div className="fixed inset-0 bg-black/70 z-[60] flex items-center justify-center p-4">
+          <div className="bg-[#0C111D] border border-[#344054] rounded-xl w-full max-w-md shadow-2xl">
+            <div className="px-6 py-4 border-b border-[#344054] flex items-center justify-between">
+              <h3 className="text-sm font-semibold text-[#F9FAFB]">Autorizar criação de tabelas</h3>
+              <button
+                onClick={() => setForceInitOpen(false)}
+                className="p-1.5 rounded-lg text-[#667085] hover:text-[#D0D5DD] hover:bg-white/5 transition-colors"
+              >
+                <X size={16} />
+              </button>
+            </div>
+            <div className="px-6 py-5 space-y-3">
+              <p className="text-sm text-[#D0D5DD]">
+                Este banco já possui um histórico de migrations incompatível. O EvoNexus pode criar/recriar as tabelas do Knowledge e executar as migrations automaticamente.
+              </p>
+              <p className="text-xs text-[#667085]">
+                Isso cria as tabelas <span className="font-mono">knowledge_*</span> e usa <span className="font-mono">knowledge_alembic_version</span>. Se já existirem tabelas do Knowledge, os dados serão removidos. Não altera tabelas do CRM.
+              </p>
+              <div className="flex items-center justify-end gap-2 pt-2">
+                <button
+                  onClick={() => setForceInitOpen(false)}
+                  disabled={forceInitLoading}
+                  className="px-3 py-2 rounded-lg text-xs font-medium bg-white/5 text-[#D0D5DD] hover:bg-white/10 transition-colors disabled:opacity-50"
+                >
+                  Cancelar
+                </button>
+                <button
+                  onClick={handleForceInit}
+                  disabled={forceInitLoading}
+                  className="px-3 py-2 rounded-lg text-xs font-medium bg-[#00FFA7] text-[#0C111D] hover:bg-[#00FFA7]/90 transition-colors disabled:opacity-50"
+                >
+                  {forceInitLoading ? 'Criando…' : 'Criar tabelas e migrar'}
+                </button>
+              </div>
+            </div>
+          </div>
         </div>
       )}
     </div>
