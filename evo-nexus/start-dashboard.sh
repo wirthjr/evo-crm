@@ -3,7 +3,7 @@
 # start-dashboard.sh — multi-process entrypoint for the dashboard container.
 #
 # The dashboard needs TWO processes running simultaneously:
-#   * Flask backend        → :8080   (/api/*, static SPA, OAuth, Providers...)
+#   * Flask backend        → :8090   (/api/*, static SPA, OAuth, Providers...)
 #   * Node terminal-server → :32352  (/terminal/*, embedded CLI sessions)
 #
 # The React frontend calls /terminal/* on the same origin and expects the

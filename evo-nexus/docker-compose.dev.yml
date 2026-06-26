@@ -3,7 +3,7 @@
 # USO:
 #   1. cp .env.example .env  (e edite com suas chaves)
 #   2. docker compose -f docker-compose.dev.yml up --build
-#   3. Acesse http://localhost:8080
+#   3. Acesse http://localhost:8090
 #
 # Diferenças do docker-compose.yml de produção:
 #   - Monta o código-fonte local (live reload no backend)
@@ -18,7 +18,7 @@ services:
       dockerfile: Dockerfile.dev
     container_name: evonexus-dev
     ports:
-      - "8080:8080"        # Dashboard Flask + React
+      - "8090:8080"        # Dashboard Flask + React
       - "32352:32352"      # Terminal server (Claude Code terminal)
     env_file:
       - path: .env
